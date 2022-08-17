@@ -4,11 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace KnightsRPGGame.Utilits
+namespace KnightsRPGGame.Units
 {
-    internal struct Position
+    internal class Wizard : Unit
     {
-        public float X { get; set; }
-        public float Y { get; set; }
     }
 }

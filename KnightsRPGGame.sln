@@ -5,7 +5,9 @@ VisualStudioVersion = 17.2.32616.157
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KnightsRPGGameService", "KnightsRPGGameService\KnightsRPGGameService.csproj", "{B290B0C1-04FA-4E68-833F-78B953978140}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KnightsRPGGame", "KnightsRPGGame\KnightsRPGGame.csproj", "{B32B3777-1EEB-40C8-AF65-72E2A4249D5B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KnightsRPGGame", "KnightsRPGGame\KnightsRPGGame.csproj", "{B32B3777-1EEB-40C8-AF65-72E2A4249D5B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EventBusLibrary", "EventBusLibrary\EventBusLibrary.csproj", "{AE45C123-4F81-4547-A4B7-BC9D9709B39D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{B32B3777-1EEB-40C8-AF65-72E2A4249D5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B32B3777-1EEB-40C8-AF65-72E2A4249D5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B32B3777-1EEB-40C8-AF65-72E2A4249D5B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AE45C123-4F81-4547-A4B7-BC9D9709B39D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AE45C123-4F81-4547-A4B7-BC9D9709B39D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AE45C123-4F81-4547-A4B7-BC9D9709B39D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AE45C123-4F81-4547-A4B7-BC9D9709B39D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

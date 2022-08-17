@@ -3,12 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using KnightsRPGGame.Units;
 
-namespace KnightsRPGGame.Utilits
+namespace KnightsRPGGame.Player
 {
-    internal struct Position
+    internal class Player : Unit
     {
-        public float X { get; set; }
-        public float Y { get; set; }
     }
 }
