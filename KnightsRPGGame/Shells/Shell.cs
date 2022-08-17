@@ -10,6 +10,7 @@ namespace KnightsRPGGame.Shells
     internal class Shell : GameObject, IMovable
     {
         public Vector<float> Speed { get; set; }
+        public Vector<float> MaxSpeed { get; set; }
         public Vector<float> Acceleration { get; set; }
     }
 }
