@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace KnightsRPGGame.Utilits
 {
-    internal struct Position
+    public struct Position
     {
         public float X { get; set; }
         public float Y { get; set; }
