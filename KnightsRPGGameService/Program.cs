@@ -3,6 +3,21 @@ using KnightsRPGGame.Service.GameAPI.Repository;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
+// Добавление CORS с конкретной политикой
+builder.Services.AddCors(options =>
+{
+    var frontendConfigSection = builder.Configuration.GetSection("FrontendConfiguration:Uri");
+    options.AddPolicy("AllowSpecificOrigin",
+        builder =>
+        {
+            builder.WithOrigins(frontendConfigSection.Value)
+                   .AllowAnyHeader()
+                   .AllowAnyMethod()
+                   .AllowCredentials(); // Если необходимы куки/учетные данные
+        });
+});
+
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -22,6 +37,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowSpecificOrigin"); // Включаем CORS
 
 app.UseAuthorization();
 
