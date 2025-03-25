@@ -8,7 +8,7 @@ namespace KnightsRPGGame.GameArea
 {
     internal class Game
     {
-        public readonly Turns Turns = new Turns();
+        
 
     }
 }
