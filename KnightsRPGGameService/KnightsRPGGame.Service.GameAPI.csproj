@@ -17,4 +17,8 @@
     <ProjectReference Include="..\KnightsRPGGame\KnightsRPGGame.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Models\Notify\" />
+  </ItemGroup>
+
 </Project>

@@ -1,3 +1,4 @@
+using KnightsRPGGame.Service.GameAPI.GameComponents;
 using KnightsRPGGame.Service.GameAPI.Hubs;
 using KnightsRPGGame.Service.GameAPI.Repository;
 
@@ -26,6 +27,9 @@ builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IGameRepository, GameRepository>();
+builder.Services.AddSingleton<GameManager>();
+builder.Services.AddSingleton<FrameStreamer>();
+
 
 var app = builder.Build();
 

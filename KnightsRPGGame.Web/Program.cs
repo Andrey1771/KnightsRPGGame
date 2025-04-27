@@ -1,7 +1,13 @@
+using KnightsRPGGame.Service.GameAPI.GameComponents;
+using KnightsRPGGame.Service.GameAPI.Hubs;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<GameManager>();
+builder.Services.AddSingleton<FrameStreamer>();
 
 var app = builder.Build();
 
@@ -23,5 +29,6 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+app.MapHub<GameHub>("/gameHub");
 
 app.Run();
