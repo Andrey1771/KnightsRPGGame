@@ -49,6 +49,15 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             }
         }
 
+        public static List<string> GetPlayersInRoom(string roomName)
+        {
+            if (rooms.TryGetValue(roomName, out var room))
+            {
+                return room.Players.ToList();
+            }
+            return new List<string>();
+        }
+
         public static IEnumerable<GameRoom> GetAllRooms()
         {
             return rooms.Values;

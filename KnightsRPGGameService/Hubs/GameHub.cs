@@ -10,6 +10,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task Error(string message);
         Task PlayerJoined(string connectionId);
         Task PlayerLeft(string connectionId);
+        Task ReceivePlayerList(List<string> connectionIds);
     }
 
     public class GameHub : Hub<IGameClient>
@@ -62,7 +63,13 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             if (RoomManager.AddPlayerToRoom(roomName, Context.ConnectionId))
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
+
+                // Отправляем событие, что игрок присоединился
                 await Clients.Group(roomName).PlayerJoined(Context.ConnectionId);
+
+                // Отправляем всем новый список игроков
+                var players = RoomManager.GetPlayersInRoom(roomName);
+                await Clients.Group(roomName).ReceivePlayerList(players);
             }
             else
             {
@@ -74,7 +81,20 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         {
             RoomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName);
+
+            // Сообщаем, что игрок вышел
             await Clients.Group(roomName).PlayerLeft(Context.ConnectionId);
+
+            // Отправляем новый список игроков
+            var players = RoomManager.GetPlayersInRoom(roomName);
+            await Clients.Group(roomName).ReceivePlayerList(players);
+        }
+
+        public async Task RequestPlayerList(string roomName)
+        {
+            var players = RoomManager.GetPlayersInRoom(roomName);
+
+            await Clients.Caller.ReceivePlayerList(players);
         }
 
         /*public override async Task OnDisconnectedAsync(Exception exception)
