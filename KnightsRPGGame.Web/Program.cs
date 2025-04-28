@@ -5,9 +5,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
-builder.Services.AddSignalR();
-builder.Services.AddSingleton<GameManager>();
-builder.Services.AddSingleton<FrameStreamer>();
 
 var app = builder.Build();
 

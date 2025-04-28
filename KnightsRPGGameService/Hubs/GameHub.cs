@@ -4,7 +4,15 @@ using System.Numerics;
 
 namespace KnightsRPGGame.Service.GameAPI.Hubs
 {
-    public class GameHub : Hub
+    public interface IGameClient
+    {
+        Task RoomCreated(string roomName);
+        Task Error(string message);
+        Task PlayerJoined(string connectionId);
+        Task PlayerLeft(string connectionId);
+    }
+
+    public class GameHub : Hub<IGameClient>
     {
         private static GameManager _game;
         private FrameStreamer _frameStreamer;
@@ -41,11 +49,11 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
                 RoomManager.AddPlayerToRoom(roomName, Context.ConnectionId);
-                await Clients.Caller.SendAsync("RoomCreated", roomName);
+                await Clients.Caller.RoomCreated(roomName);
             }
             else
             {
-                await Clients.Caller.SendAsync("Error", "Room already exists.");
+                await Clients.Caller.Error("Room already exists.");
             }
         }
 
@@ -54,20 +62,19 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             if (RoomManager.AddPlayerToRoom(roomName, Context.ConnectionId))
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
-                await Clients.Group(roomName).SendAsync("PlayerJoined", Context.ConnectionId);
+                await Clients.Group(roomName).PlayerJoined(Context.ConnectionId);
             }
             else
             {
-                await Clients.Caller.SendAsync("Error", "Failed to join room (room full or doesn't exist).");
+                await Clients.Caller.Error("Failed to join room (room full or doesn't exist).");
             }
         }
 
         public async Task LeaveRoom(string roomName)
         {
             RoomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
-            //Не должна ли удаляться только если полльзователь последний?
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName);
-            await Clients.Group(roomName).SendAsync("PlayerLeft", Context.ConnectionId);
+            await Clients.Group(roomName).PlayerLeft(Context.ConnectionId);
         }
 
         /*public override async Task OnDisconnectedAsync(Exception exception)
