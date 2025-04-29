@@ -49,6 +49,14 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             }
         }
 
+        public static void RemovePlayerFromAllRooms(string connectionId)
+        {
+            if (rooms.TryGetValue(connectionId, out var room))
+            {
+                RemovePlayerFromRoom(room.RoomName, connectionId);
+            }
+        }
+
         public static List<string> GetPlayersInRoom(string roomName)
         {
             if (rooms.TryGetValue(roomName, out var room))
@@ -61,6 +69,18 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public static IEnumerable<GameRoom> GetAllRooms()
         {
             return rooms.Values;
+        }
+        
+        public static string? GetRoomNameByConnection(string connectionId)
+        {
+            foreach (var room in rooms)
+            {
+                if (room.Value.Players.Contains(connectionId))
+                {
+                    return room.Key;
+                }
+            }
+            return null;
         }
     }
 }

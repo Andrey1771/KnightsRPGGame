@@ -5,96 +5,76 @@ using System.Numerics;
 
 namespace KnightsRPGGame.Service.GameAPI.GameComponents
 {
-    class Frame
+    public enum PlayerAction
     {
-        public int Id { get; set; }
-        public int AsteroidsCount { get; set; } = 5;
+        MoveUp,
+        MoveDown,
+        MoveLeft,
+        MoveRight,
+        Attack
+    }
 
-        public List<Player> Players { get; set; } = new List<Player>();
-
-        public List<Asteroid> Asteroids { get; set; } = new List<Asteroid>();
-
-        public List<Bullet> Bullets { get; set; } = new List<Bullet>();
-
-        public List<Asteroid> Explosions { get; set; } = new List<Asteroid>();
-
-        public GameState State { get; set; } = GameState.WaitingforStart;
+    public class PlayerState
+    {
+        public string ConnectionId { get; set; } // Идентификатор подключения игрока
+        public Vector2 Position { get; set; }    // Текущая позиция игрока (например, x, y)
+        public int Health { get; set; }          // Здоровье игрока (по желанию)
+        public int Score { get; set; }           // Очки игрока (по желанию)
     }
 
     public class FrameStreamer
     {
-        private int currentFrameId;
+        private readonly IHubContext<GameHub, IGameClient> _hubContext;
+        private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
 
-        private ConcurrentQueue<object> frameQueue;
-
-        private Timer frameTimer;
-
-        private CancellationTokenSource cancellationTokenSource;
-
-        private IHubContext<GameHub> hubContext;
-
-        private GameManager _gameManager;
-
-        private const int FrameInterval = 33;
-
-        public FrameStreamer(IHubContext<GameHub> hubContext, GameManager game)
+        public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext)
         {
-            this.hubContext = hubContext;
-            this.frameQueue = new ConcurrentQueue<object>();
-            this.cancellationTokenSource = new CancellationTokenSource();
-            this.frameTimer = new Timer(EnqueueFrame, null, 0, FrameInterval);
-            this._gameManager = game;
+            _hubContext = hubContext;
         }
 
-        private void EnqueueFrame(object state)
+        public void UpdatePlayerAction(string connectionId, PlayerAction action)
         {
-            //_gameManager.RefreshGame();
-            //TODO Заглушка
-            var CurrentGame = new Game(0, 0, "");//_gameManager.GetGame();
-            if (CurrentGame.State == GameState.Running)
+            if (!_playerStates.TryGetValue(connectionId, out var playerState))
             {
-                var frame = new Frame
+                playerState = new PlayerState
                 {
-                    Id = Interlocked.Increment(ref currentFrameId),
-                    Asteroids = CurrentGame.Asteroids,
-                    Players = CurrentGame.Players.Select(kv => kv.Value).ToList(),
-                    Bullets = CurrentGame.Bullets,
-                    State = CurrentGame.State,
-                    Explosions = CurrentGame.Explosions,
+                    ConnectionId = connectionId,
+                    Position = new Vector2(0, 0),
+                    Health = 100
                 };
-                frameQueue.Enqueue(frame);
+                _playerStates[connectionId] = playerState;
             }
-        }
 
-        /// <summary>
-        /// Starts streaming frames to multiple clients using SignalR.
-        /// </summary>
-        public async Task StartStreamingAsync()
-        {
-            var cancellationToken = cancellationTokenSource.Token;
-
-            // Keep running until a cancellation request is received.
-            while (!cancellationToken.IsCancellationRequested)
+            // Обновляем позицию
+            var pos = playerState.Position;
+            switch (action)
             {
-                // Check if a frame is available in the frame queue.
-                if (frameQueue.TryDequeue(out var frame))
-                {
-                    // Send the frame to all connected clients.
-                    await hubContext.Clients.All.SendAsync("updateFrame", frame);
-                }
-                else
-                {
-                    // Delay for 20ms to prevent overloading the system.
-                    await Task.Delay(20);
-                }
+                case PlayerAction.MoveUp:
+                    pos.Y -= 1;
+                    break;
+                case PlayerAction.MoveDown:
+                    pos.Y += 1;
+                    break;
+                case PlayerAction.MoveLeft:
+                    pos.X -= 1;
+                    break;
+                case PlayerAction.MoveRight:
+                    pos.X += 1;
+                    break;
+            }
+            playerState.Position = pos;
+
+            // Получаем комнату игрока
+            var roomName = RoomManager.GetRoomNameByConnection(connectionId);
+            if (roomName != null)
+            {
+                _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, pos);
             }
         }
 
-        public void StopStreaming()
+        public void RemovePlayer(string connectionId)
         {
-            cancellationTokenSource.Cancel();
-            frameTimer.Dispose();
-            frameQueue.Clear();
+            _playerStates.TryRemove(connectionId, out _);
         }
     }
 }

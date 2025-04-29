@@ -11,6 +11,8 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task PlayerJoined(string connectionId);
         Task PlayerLeft(string connectionId);
         Task ReceivePlayerList(List<string> connectionIds);
+        Task GameStarted();
+        Task ReceivePlayerPosition(string connectionId, Vector2 vector);
     }
 
     public class GameHub : Hub<IGameClient>
@@ -43,6 +45,31 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
             await base.OnDisconnectedAsync(exception);
         }*/
+
+        public async Task StartGame(string roomName)
+        {
+            await Clients.Group(roomName).GameStarted();
+        }
+
+        public Task<string> GetConnectionId()
+        {
+            return Task.FromResult(Context.ConnectionId);
+        }
+
+        public async Task PerformAction(string action)
+        {
+            if (Enum.TryParse<PlayerAction>(action, out var parsedAction))
+            {
+                _frameStreamer.UpdatePlayerAction(Context.ConnectionId, parsedAction);
+            }
+        }
+
+        public override async Task OnDisconnectedAsync(Exception? exception)
+        {
+            _frameStreamer.RemovePlayer(Context.ConnectionId);
+            RoomManager.RemovePlayerFromAllRooms(Context.ConnectionId);
+            await base.OnDisconnectedAsync(exception);
+        }
 
         public async Task CreateRoom(string roomName, int maxPlayers = 4)
         {
