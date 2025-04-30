@@ -12,7 +12,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task PlayerLeft(string connectionId);
         Task ReceivePlayerList(List<string> connectionIds);
         Task GameStarted();
-        Task ReceivePlayerPosition(string connectionId, Vector2 vector);
+        Task ReceivePlayerPosition(string connectionId, PlayerPositionDto position);
     }
 
     public class GameHub : Hub<IGameClient>

@@ -22,6 +22,12 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public int Score { get; set; }           // Очки игрока (по желанию)
     }
 
+    public class PlayerPositionDto
+    {
+        public float X { get; set; }
+        public float Y { get; set; }
+    }
+
     public class FrameStreamer
     {
         private readonly IHubContext<GameHub, IGameClient> _hubContext;
@@ -46,29 +52,33 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             }
 
             // Обновляем позицию
-            var pos = playerState.Position;
+            var position = playerState.Position;
             switch (action)
             {
                 case PlayerAction.MoveUp:
-                    pos.Y -= 1;
+                    position.Y -= 1;
                     break;
                 case PlayerAction.MoveDown:
-                    pos.Y += 1;
+                    position.Y += 1;
                     break;
                 case PlayerAction.MoveLeft:
-                    pos.X -= 1;
+                    position.X -= 1;
                     break;
                 case PlayerAction.MoveRight:
-                    pos.X += 1;
+                    position.X += 1;
                     break;
             }
-            playerState.Position = pos;
+            playerState.Position = position;
 
             // Получаем комнату игрока
             var roomName = RoomManager.GetRoomNameByConnection(connectionId);
             if (roomName != null)
             {
-                _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, pos);
+                _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
+                {
+                    X = position.X,
+                    Y = position.Y
+                });
             }
         }
 
