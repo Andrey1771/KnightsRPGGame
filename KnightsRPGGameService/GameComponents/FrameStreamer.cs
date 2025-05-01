@@ -132,5 +132,10 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             _playerStates.TryRemove(connectionId, out _);
             _activeActions.TryRemove(connectionId, out _);
         }
+
+        public bool HasPlayer()
+        {
+            return _playerStates.Any();
+        }
     }
 }

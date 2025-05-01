@@ -77,9 +77,15 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            _frameStreamer.StopStreaming();
             _frameStreamer.RemovePlayer(Context.ConnectionId);
+            if (!_frameStreamer.HasPlayer())
+            {
+                _frameStreamer.StopStreaming();
+            }
             RoomManager.RemovePlayerFromAllRooms(Context.ConnectionId);
+            // Сообщаем, что игрок вышел
+            await Clients.All.PlayerLeft(Context.ConnectionId); //TODO ALL?
+
             await base.OnDisconnectedAsync(exception);
         }
 
