@@ -30,7 +30,6 @@ builder.Services.AddScoped<IGameRepository, GameRepository>();
 builder.Services.AddSingleton<GameManager>();
 builder.Services.AddSingleton<FrameStreamer>();
 
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

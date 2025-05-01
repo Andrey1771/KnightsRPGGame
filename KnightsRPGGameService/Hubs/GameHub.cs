@@ -46,9 +46,20 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             await base.OnDisconnectedAsync(exception);
         }*/
 
+        public override async Task OnConnectedAsync()
+        {
+            await base.OnConnectedAsync();
+        }
+
         public async Task StartGame(string roomName)
         {
             await Clients.Group(roomName).GameStarted();
+            _frameStreamer.StartStreaming();
+        }
+
+        public async Task StopGame(string roomName)
+        {
+            _frameStreamer.StopStreaming();
         }
 
         public Task<string> GetConnectionId()
@@ -66,6 +77,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
+            _frameStreamer.StopStreaming();
             _frameStreamer.RemovePlayer(Context.ConnectionId);
             RoomManager.RemovePlayerFromAllRooms(Context.ConnectionId);
             await base.OnDisconnectedAsync(exception);
