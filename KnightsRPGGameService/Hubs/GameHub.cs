@@ -13,6 +13,9 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task ReceivePlayerList(List<string> connectionIds);
         Task GameStarted(Dictionary<string, PlayerPositionDto> initialPositions);
         Task ReceivePlayerPosition(string connectionId, PlayerPositionDto position);
+        Task ReceiveBotHit(string botId, int health);
+        Task BotDied(string botId);
+        Task BulletFired(string connectionId, PlayerPositionDto startPosition);
     }
 
     public class GameHub : Hub<IGameClient>
@@ -75,6 +78,20 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             await Clients.Group(roomName).GameStarted(initialPositions);
 
             
+        }
+
+        public async Task Shoot()
+        {
+            if (_frameStreamer.TryGetPlayerPosition(Context.ConnectionId, out var position))
+            {
+                await Clients.All.BulletFired(Context.ConnectionId, new PlayerPositionDto
+                {
+                    X = position.X,
+                    Y = position.Y
+                });
+
+                await _frameStreamer.ProcessShot(Context.ConnectionId); // Проверка попаданий по ботам
+            }
         }
 
         public async Task StopGame(string roomName)

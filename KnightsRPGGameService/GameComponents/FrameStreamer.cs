@@ -17,6 +17,13 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         StopMoveRight
     }
 
+    public class EnemyBot
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public Vector2 Position { get; set; }
+        public int Health { get; set; } = 100;
+    }
+
     public class PlayerState
     {
         public string ConnectionId { get; set; } // Идентификатор подключения игрока
@@ -38,6 +45,8 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         // Храним состояние игроков
         private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
 
+        private readonly ConcurrentDictionary<string, EnemyBot> _bots = new();
+
         // Активные действия (нажатые клавиши) по игроку
         private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
 
@@ -54,7 +63,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             if (_isStreaming) return;
 
             _isStreaming = true;
-            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 15);// более 60 фпс
+            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 33);// 30 фпс
 
             /*var roomName = RoomManager.GetRoomNameByConnection(connectionId);
             if (roomName != null)
@@ -66,6 +75,22 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 });
             }*/
 
+        }
+
+        public bool TryGetPlayerPosition(string connectionId, out PlayerPositionDto position)
+        {
+            if (_playerStates.TryGetValue(connectionId, out var state))
+            {
+                position = new PlayerPositionDto
+                {
+                    X = state.Position.X,
+                    Y = state.Position.Y
+                };
+                return true;
+            }
+
+            position = default!;
+            return false;
         }
 
         public void RegisterPlayer(string connectionId, Vector2 position)
@@ -148,6 +173,37 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 }
             }
         }
+
+        public async Task ProcessShot(string connectionId)
+        {
+            if (!_playerStates.TryGetValue(connectionId, out var shooter)) return;
+
+            var bulletStart = shooter.Position;
+
+            const float bulletRange = 500f;
+            const float hitboxRadius = 20f;
+
+            foreach (var (botId, bot) in _bots)
+            {
+                if (MathF.Abs(bot.Position.X - bulletStart.X) <= hitboxRadius &&
+                    bot.Position.Y < bulletStart.Y &&
+                    bot.Position.Y > bulletStart.Y - bulletRange)
+                {
+                    bot.Health -= 20;
+
+                    await _hubContext.Clients.All.ReceiveBotHit(botId, bot.Health);
+
+                    if (bot.Health <= 0)
+                    {
+                        _bots.TryRemove(botId, out _);
+                        await _hubContext.Clients.All.BotDied(botId);
+                    }
+
+                    break;
+                }
+            }
+        }
+
 
         public void RemovePlayer(string connectionId)
         {
