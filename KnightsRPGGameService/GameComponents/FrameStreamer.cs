@@ -19,7 +19,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
 
     public class EnemyBot
     {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string BotId { get; set; } = Guid.NewGuid().ToString();
         public Vector2 Position { get; set; }
         public int Health { get; set; } = 100;
     }
@@ -45,7 +45,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         // Храним состояние игроков
         private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
 
-        private readonly ConcurrentDictionary<string, EnemyBot> _bots = new();
+        private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new ();
 
         // Активные действия (нажатые клавиши) по игроку
         private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
@@ -75,6 +75,25 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 });
             }*/
 
+        }
+
+        public void AddEnemyBot(string botId, Vector2 position)
+        {
+            _enemyBots[botId] = new EnemyBot
+            {
+                BotId = botId,
+                Position = position
+            };
+        }
+
+        public void AddEnemyBot(Vector2 position)
+        {
+            var bot = new EnemyBot
+            {
+                Position = position
+            };
+
+            _enemyBots[bot.BotId] = bot;
         }
 
         public bool TryGetPlayerPosition(string connectionId, out PlayerPositionDto position)
@@ -183,7 +202,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             const float bulletRange = 500f;
             const float hitboxRadius = 20f;
 
-            foreach (var (botId, bot) in _bots)
+            foreach (var (botId, bot) in _enemyBots)
             {
                 if (MathF.Abs(bot.Position.X - bulletStart.X) <= hitboxRadius &&
                     bot.Position.Y < bulletStart.Y &&
@@ -195,7 +214,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
 
                     if (bot.Health <= 0)
                     {
-                        _bots.TryRemove(botId, out _);
+                        _enemyBots.TryRemove(botId, out _);
                         await _hubContext.Clients.All.BotDied(botId);
                     }
 

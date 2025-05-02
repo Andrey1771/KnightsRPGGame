@@ -11,11 +11,13 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task PlayerJoined(string connectionId);
         Task PlayerLeft(string connectionId);
         Task ReceivePlayerList(List<string> connectionIds);
-        Task GameStarted(Dictionary<string, PlayerPositionDto> initialPositions);
+        Task GameStarted(Dictionary<string, PlayerPositionDto> initialPositions, Dictionary<string, PlayerPositionDto> bots);
         Task ReceivePlayerPosition(string connectionId, PlayerPositionDto position);
+
         Task ReceiveBotHit(string botId, int health);
         Task BotDied(string botId);
         Task BulletFired(string connectionId, PlayerPositionDto startPosition);
+        Task ReceiveBotList(Dictionary<string, PlayerPositionDto> bots);
     }
 
     public class GameHub : Hub<IGameClient>
@@ -58,26 +60,40 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         {
             var players = RoomManager.GetPlayersInRoom(roomName);
 
-            var initialPositions = new Dictionary<string, PlayerPositionDto>();
+            var playerPositions = new Dictionary<string, PlayerPositionDto>();
+            var botPositions = new Dictionary<string, PlayerPositionDto>();
 
             foreach (var connectionId in players)
             {
-                var position = new Vector2(0, 0);
-                _frameStreamer.RegisterPlayer(connectionId, position);
+                var playerPos = new Vector2(0, 0);
+                _frameStreamer.RegisterPlayer(connectionId, playerPos);
 
-                initialPositions[connectionId] = new PlayerPositionDto
+                playerPositions[connectionId] = new PlayerPositionDto
                 {
-                    X = position.X,
-                    Y = position.Y
+                    X = playerPos.X,
+                    Y = playerPos.Y
                 };
-
-                _frameStreamer.StartStreaming(connectionId);//TODO начинаем стриминг для клиентов?
             }
 
-            // Отправляем начальные позиции вместе с сигналом начала игры
-            await Clients.Group(roomName).GameStarted(initialPositions);
+            // Создание бота (тест) TODO удалить
+            var bot1Id = Guid.NewGuid().ToString();
+            var bot1Pos = new Vector2(200, 100);
+            _frameStreamer.AddEnemyBot(bot1Id, bot1Pos);
 
-            
+            botPositions[bot1Id] = new PlayerPositionDto
+            {
+                X = bot1Pos.X,
+                Y = bot1Pos.Y
+            };
+
+            // Отправляем старт игры с игроками и ботами
+            await Clients.Group(roomName).GameStarted(playerPositions, botPositions);
+
+            // Запуск стриминга
+            foreach (var connectionId in players)
+            {
+                _frameStreamer.StartStreaming(connectionId);
+            }
         }
 
         public async Task Shoot()
