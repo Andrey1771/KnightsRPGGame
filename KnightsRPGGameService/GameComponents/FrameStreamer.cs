@@ -49,12 +49,34 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             _hubContext = hubContext;
         }
 
-        public void StartStreaming()
+        public async Task StartStreaming(string connectionId)
         {
             if (_isStreaming) return;
 
             _isStreaming = true;
             _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 50);
+
+            /*var roomName = RoomManager.GetRoomNameByConnection(connectionId);
+            if (roomName != null)
+            {
+                await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
+                {
+                    X = 0,//TODO Инициализация изначальной позиции игрока
+                    Y = 0
+                });
+            }*/
+
+        }
+
+        public void RegisterPlayer(string connectionId, Vector2 position)
+        {
+            _playerStates[connectionId] = new PlayerState
+            {
+                ConnectionId = connectionId,
+                Position = position,
+                Health = 100,
+                Score = 0
+            };
         }
 
         public void StopStreaming()
@@ -118,7 +140,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 var roomName = RoomManager.GetRoomNameByConnection(connectionId);
                 if (roomName != null)
                 {
-                    await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
+                    await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto //рассылаем сразу всей группе?
                     {
                         X = state.Position.X,
                         Y = state.Position.Y

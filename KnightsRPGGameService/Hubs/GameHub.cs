@@ -11,7 +11,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task PlayerJoined(string connectionId);
         Task PlayerLeft(string connectionId);
         Task ReceivePlayerList(List<string> connectionIds);
-        Task GameStarted();
+        Task GameStarted(Dictionary<string, PlayerPositionDto> initialPositions);
         Task ReceivePlayerPosition(string connectionId, PlayerPositionDto position);
     }
 
@@ -53,8 +53,28 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
         public async Task StartGame(string roomName)
         {
-            await Clients.Group(roomName).GameStarted();
-            _frameStreamer.StartStreaming();
+            var players = RoomManager.GetPlayersInRoom(roomName);
+
+            var initialPositions = new Dictionary<string, PlayerPositionDto>();
+
+            foreach (var connectionId in players)
+            {
+                var position = new Vector2(0, 0);
+                _frameStreamer.RegisterPlayer(connectionId, position);
+
+                initialPositions[connectionId] = new PlayerPositionDto
+                {
+                    X = position.X,
+                    Y = position.Y
+                };
+
+                _frameStreamer.StartStreaming(connectionId);//TODO начинаем стриминг для клиентов?
+            }
+
+            // Отправляем начальные позиции вместе с сигналом начала игры
+            await Clients.Group(roomName).GameStarted(initialPositions);
+
+            
         }
 
         public async Task StopGame(string roomName)
