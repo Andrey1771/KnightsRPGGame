@@ -54,7 +54,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             if (_isStreaming) return;
 
             _isStreaming = true;
-            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 50);
+            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 15);// более 60 фпс
 
             /*var roomName = RoomManager.GetRoomNameByConnection(connectionId);
             if (roomName != null)
