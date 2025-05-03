@@ -218,6 +218,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                         await _hubContext.Clients.All.BotDied(botId);
                     }
 
+                    await _hubContext.Clients.All.BulletHit(connectionId);
                     break;
                 }
             }

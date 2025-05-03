@@ -18,12 +18,16 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task BotDied(string botId);
         Task BulletFired(string connectionId, PlayerPositionDto startPosition);
         Task ReceiveBotList(Dictionary<string, PlayerPositionDto> bots);
+        Task BulletHit(string connectionId);
     }
 
     public class GameHub : Hub<IGameClient>
     {
         private static GameManager _game;
         private FrameStreamer _frameStreamer;
+
+        private static readonly Dictionary<string, DateTime> _lastShotTime = new();
+        private static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500); // 0.5 секунды
 
         public GameHub(GameManager game, FrameStreamer frameStreamer)
         {
@@ -98,15 +102,29 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
         public async Task Shoot()
         {
-            if (_frameStreamer.TryGetPlayerPosition(Context.ConnectionId, out var position))
+            var connectionId = Context.ConnectionId;
+            var now = DateTime.UtcNow;
+
+            if (_lastShotTime.TryGetValue(connectionId, out var lastShot))
             {
-                await Clients.All.BulletFired(Context.ConnectionId, new PlayerPositionDto
+                if (now - lastShot < ShotCooldown)
+                {
+                    // Игнорируем выстрел — слишком рано
+                    return;
+                }
+            }
+
+            _lastShotTime[connectionId] = now;
+
+            if (_frameStreamer.TryGetPlayerPosition(connectionId, out var position))
+            {
+                await Clients.All.BulletFired(connectionId, new PlayerPositionDto
                 {
                     X = position.X,
                     Y = position.Y
                 });
 
-                await _frameStreamer.ProcessShot(Context.ConnectionId); // Проверка попаданий по ботам
+                await _frameStreamer.ProcessShot(connectionId); // Проверка попаданий по ботам
             }
         }
 
