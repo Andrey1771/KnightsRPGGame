@@ -1,5 +1,6 @@
 ﻿using KnightsRPGGame.Service.GameAPI.Hubs;
 using Microsoft.AspNetCore.SignalR;
+using System;
 using System.Collections.Concurrent;
 using System.Numerics;
 
@@ -38,6 +39,16 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public float Y { get; set; }
     }
 
+    public class BulletDto
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string OwnerId { get; set; } = string.Empty;
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float VelocityX { get; set; }
+        public float VelocityY { get; set; }
+    }
+
     public class FrameStreamer
     {
         private readonly IHubContext<GameHub, IGameClient> _hubContext;
@@ -46,6 +57,8 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
 
         private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new ();
+
+        private readonly Dictionary<string, BulletDto> _activeBullets = new();
 
         // Активные действия (нажатые клавиши) по игроку
         private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
@@ -63,7 +76,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             if (_isStreaming) return;
 
             _isStreaming = true;
-            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 33);// 30 фпс
+            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 15);// 60 фпс примерно
 
             /*var roomName = RoomManager.GetRoomNameByConnection(connectionId);
             if (roomName != null)
@@ -191,39 +204,82 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                     });
                 }
             }
+
+            await UpdateBullets(0.015f); // или вычисляй deltaTime по времени между кадрами
         }
 
-        public async Task ProcessShot(string connectionId)
+        public async Task ProcessShot(string connectionId, BulletDto bullet)
         {
-            if (!_playerStates.TryGetValue(connectionId, out var shooter)) return;
+            _activeBullets[bullet.Id] = bullet;
+        }
 
-            var bulletStart = shooter.Position;
-
-            const float bulletRange = 500f;
-            const float hitboxRadius = 20f;
-
-            foreach (var (botId, bot) in _enemyBots)
+        public async Task UpdateBullets(float deltaTime)
+        {
+            foreach (var bullet in _activeBullets.Values.ToList())
             {
-                if (MathF.Abs(bot.Position.X - bulletStart.X) <= hitboxRadius &&
-                    bot.Position.Y < bulletStart.Y &&
-                    bot.Position.Y > bulletStart.Y - bulletRange)
+                bullet.X += bullet.VelocityX * deltaTime;
+                bullet.Y += bullet.VelocityY * deltaTime;
+
+                foreach (var (botId, bot) in _enemyBots)
                 {
-                    bot.Health -= 20;
+                    float dx = bot.Position.X - bullet.X;
+                    float dy = bot.Position.Y - bullet.Y;
+                    float distanceSquared = dx * dx + dy * dy;
 
-                    await _hubContext.Clients.All.ReceiveBotHit(botId, bot.Health);
-
-                    if (bot.Health <= 0)
+                    const float hitboxRadius = 20f;
+                    if (distanceSquared <= hitboxRadius * hitboxRadius)
                     {
-                        _enemyBots.TryRemove(botId, out _);
-                        await _hubContext.Clients.All.BotDied(botId);
-                    }
+                        // Попадание
+                        bot.Health -= 20;
 
-                    await _hubContext.Clients.All.BulletHit(connectionId);
-                    break;
+                        await _hubContext.Clients.All.ReceiveBotHit(botId, bot.Health);
+
+                        if (bot.Health <= 0)
+                        {
+                            _enemyBots.TryRemove(botId, out _);
+                            await _hubContext.Clients.All.BotDied(botId);
+                        }
+
+                        _activeBullets.Remove(bullet.Id);
+                        await _hubContext.Clients.All.RemoveBullet(bullet.Id);
+
+                        break;
+                    }
+                }
+
+                if (_activeBullets.ContainsKey(bullet.Id))
+                {
+                    if (IsOutOfBounds(bullet))
+                    {
+                        _activeBullets.Remove(bullet.Id);
+                        await _hubContext.Clients.All.RemoveBullet(bullet.Id);
+                    }
+                    else
+                    {
+                        await _hubContext.Clients.All.UpdateBullet(bullet);
+                    }
                 }
             }
         }
 
+        private bool IsOutOfBounds(BulletDto bullet)
+        {
+            return bullet.Y < 0 || bullet.Y > 1000 || bullet.X < 0 || bullet.X > 1000;
+        }
+
+        private bool HitSomething(BulletDto bullet)
+        {
+            foreach (var bot in _enemyBots.Values)
+            {
+                if (MathF.Abs(bot.Position.X - bullet.X) < 10 &&
+                    MathF.Abs(bot.Position.Y - bullet.Y) < 10)
+                {
+                    bot.Health -= 20;
+                    return true;
+                }
+            }
+            return false;
+        }
 
         public void RemovePlayer(string connectionId)
         {

@@ -19,6 +19,9 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task BulletFired(string connectionId, PlayerPositionDto startPosition);
         Task ReceiveBotList(Dictionary<string, PlayerPositionDto> bots);
         Task BulletHit(string connectionId);
+        Task SpawnBullet(BulletDto bullet);
+        Task RemoveBullet(string bulletId);
+        Task UpdateBullet(BulletDto bullet);
     }
 
     public class GameHub : Hub<IGameClient>
@@ -28,6 +31,8 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
         private static readonly Dictionary<string, DateTime> _lastShotTime = new();
         private static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500); // 0.5 секунды
+
+   
 
         public GameHub(GameManager game, FrameStreamer frameStreamer)
         {
@@ -124,7 +129,18 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
                     Y = position.Y
                 });
 
-                await _frameStreamer.ProcessShot(connectionId); // Проверка попаданий по ботам
+                var bullet = new BulletDto
+                {
+                    OwnerId = connectionId,
+                    X = position.X,
+                    Y = position.Y,
+                    VelocityX = 0, // вверх
+                    VelocityY = -300
+                };
+
+                await _frameStreamer.ProcessShot(connectionId, bullet);
+
+                await Clients.All.SpawnBullet(bullet);
             }
         }
 
