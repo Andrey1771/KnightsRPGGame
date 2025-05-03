@@ -49,6 +49,16 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public float VelocityY { get; set; }
     }
 
+    public class EnemyBulletDto
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string ShooterBotId { get; set; } = string.Empty;
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float VelocityX { get; set; }
+        public float VelocityY { get; set; }
+    }
+
     public class FrameStreamer
     {
         private readonly IHubContext<GameHub, IGameClient> _hubContext;
@@ -59,6 +69,9 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new ();
 
         private readonly Dictionary<string, BulletDto> _activeBullets = new();
+
+        private readonly Dictionary<string, EnemyBulletDto> _enemyBullets = new();
+        private readonly Random _rand = new();
 
         // Активные действия (нажатые клавиши) по игроку
         private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
@@ -205,7 +218,93 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 }
             }
 
-            await UpdateBullets(0.015f); // или вычисляй deltaTime по времени между кадрами
+            await UpdateBullets(0.015f); // или вычислять deltaTime по времени между кадрами
+            await UpdateEnemyBullets(1f);
+            await BotsShootAtPlayers();
+        }
+
+        private bool IsOutOfBounds(float x, float y)
+        {
+            return x < 0 || x > 1920 || y < 0 || y > 1080; // или любые твои границы
+        }
+
+        private async Task UpdateEnemyBullets(float deltaTime)
+        {
+            foreach (var bullet in _enemyBullets.Values.ToList())
+            {
+                bullet.X += bullet.VelocityX * deltaTime;
+                bullet.Y += bullet.VelocityY * deltaTime;
+
+                foreach (var (playerId, player) in _playerStates)
+                {
+                    float dx = player.Position.X - bullet.X;
+                    float dy = player.Position.Y - bullet.Y;
+                    float distanceSquared = dx * dx + dy * dy;
+
+                    const float hitRadius = 20f;
+                    if (distanceSquared <= hitRadius * hitRadius)
+                    {
+                        player.Health -= 10;
+
+                        await _hubContext.Clients.All.PlayerHit(playerId, player.Health);
+                        if (player.Health <= 0)
+                        {
+                            await _hubContext.Clients.All.PlayerDied(playerId);
+                        }
+
+                        _enemyBullets.Remove(bullet.Id);
+                        await _hubContext.Clients.All.RemoveEnemyBullet(bullet.Id);
+                        break;
+                    }
+                }
+
+                if (_enemyBullets.ContainsKey(bullet.Id))
+                {
+                    if (IsOutOfBounds(bullet.X, bullet.Y))
+                    {
+                        _enemyBullets.Remove(bullet.Id);
+                        await _hubContext.Clients.All.RemoveEnemyBullet(bullet.Id);
+                    }
+                    else
+                    {
+                        await _hubContext.Clients.All.UpdateEnemyBullet(bullet);
+                    }
+                }
+            }
+        }
+
+        private async Task BotsShootAtPlayers()
+        {
+            foreach (var bot in _enemyBots.Values)
+            {
+                // Случайный шанс стрельбы
+                if (_rand.NextDouble() < 0.01) // 1% шанс каждый тик
+                {
+                    // Найдём ближайшего игрока
+                    var target = _playerStates.Values
+                        .OrderBy(p => Vector2.Distance(p.Position, bot.Position))
+                        .FirstOrDefault();
+
+                    if (target != null)
+                    {
+                        var direction = Vector2.Normalize(target.Position - bot.Position);
+                        var speed = 5f;
+
+                        var bullet = new EnemyBulletDto
+                        {
+                            ShooterBotId = bot.BotId,
+                            X = bot.Position.X,
+                            Y = bot.Position.Y,
+                            VelocityX = direction.X * speed,
+                            VelocityY = direction.Y * speed
+                        };
+
+                        _enemyBullets[bullet.Id] = bullet;
+
+                        await _hubContext.Clients.All.SpawnEnemyBullet(bullet);
+                    }
+                }
+            }
         }
 
         public async Task ProcessShot(string connectionId, BulletDto bullet)

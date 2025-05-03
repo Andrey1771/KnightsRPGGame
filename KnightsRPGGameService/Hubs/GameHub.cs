@@ -22,6 +22,13 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task SpawnBullet(BulletDto bullet);
         Task RemoveBullet(string bulletId);
         Task UpdateBullet(BulletDto bullet);
+
+        Task SpawnEnemyBullet(EnemyBulletDto bullet);
+        Task UpdateEnemyBullet(EnemyBulletDto bullet);
+        Task RemoveEnemyBullet(string bulletId);
+        Task PlayerHit(string connectionId, int newHealth);
+        Task PlayerDied(string connectionId);
+
     }
 
     public class GameHub : Hub<IGameClient>
