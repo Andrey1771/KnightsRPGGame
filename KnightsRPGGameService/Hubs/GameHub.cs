@@ -39,7 +39,10 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         private static readonly Dictionary<string, DateTime> _lastShotTime = new();
         private static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500); // 0.5 секунды
 
-   
+
+        private readonly Dictionary<string, CancellationTokenSource> _botSpawners = new();
+        private readonly object _botSpawnerLock = new();
+
 
         public GameHub(GameManager game, FrameStreamer frameStreamer)
         {
@@ -70,6 +73,65 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         public override async Task OnConnectedAsync()
         {
             await base.OnConnectedAsync();
+        }
+
+        private void StopBotSpawningLoop(string roomName)
+        {
+            lock (_botSpawnerLock)
+            {
+                if (_botSpawners.TryGetValue(roomName, out var cts))
+                {
+                    cts.Cancel();
+                    _botSpawners.Remove(roomName);
+                }
+            }
+        }
+
+        private void StartBotSpawningLoop(string roomName)
+        {
+            lock (_botSpawnerLock)
+            {
+                if (_botSpawners.ContainsKey(roomName))
+                    return;
+
+                var cts = new CancellationTokenSource();
+                _botSpawners[roomName] = cts;
+
+                var token = cts.Token;
+                var random = new Random();
+
+                _ = Task.Run(async () =>
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(5), token); // Период спавна
+
+                            var botId = Guid.NewGuid().ToString();
+                            float x = random.Next(50, 750); // Ширина карты (800) - допустимая зона
+                            float y = 0; // Верх карты
+
+                            var botPos = new Vector2(x, y);
+                            _frameStreamer.AddEnemyBot(botId, botPos);
+
+                            await Clients.Group(roomName).ReceiveBotList(new Dictionary<string, PlayerPositionDto>
+                    {
+                        { botId, new PlayerPositionDto { X = x, Y = y } }
+                    });
+                        }
+                        catch (TaskCanceledException)
+                        {
+                            // expected on stop
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[BotSpawner Error]: {ex.Message}");
+                        }
+                    }
+
+                }, token);
+            }
         }
 
         public async Task StartGame(string roomName)
@@ -110,6 +172,8 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             {
                 _frameStreamer.StartStreaming(connectionId);
             }
+
+            StartBotSpawningLoop(roomName);
         }
 
         public async Task Shoot()
@@ -154,6 +218,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         public async Task StopGame(string roomName)
         {
             _frameStreamer.StopStreaming();
+            StopBotSpawningLoop(roomName);
         }
 
         public Task<string> GetConnectionId()

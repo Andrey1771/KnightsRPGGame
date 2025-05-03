@@ -244,7 +244,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                     const float hitRadius = 20f;
                     if (distanceSquared <= hitRadius * hitRadius)
                     {
-                        player.Health -= 10;
+                        player.Health -= 1;
 
                         await _hubContext.Clients.All.PlayerHit(playerId, player.Health);
                         if (player.Health <= 0)
