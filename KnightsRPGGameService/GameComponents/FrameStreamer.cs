@@ -73,11 +73,15 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         private readonly Dictionary<string, EnemyBulletDto> _enemyBullets = new();
         private readonly Random _rand = new();
 
+        private DateTime _lastUpdateTime = DateTime.UtcNow;
+
         // Активные действия (нажатые клавиши) по игроку
         private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
 
         private Timer? _timer;
         private bool _isStreaming = false;
+
+        private float BotSpeed => 15; 
 
         public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext)
         {
@@ -170,18 +174,20 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             // Получаем или создаем список активных действий
             var active = _activeActions.GetOrAdd(connectionId, _ => new HashSet<PlayerAction>());
 
-            // Обновляем список активных действий
-            switch (action)
+            lock (active)
             {
-                case PlayerAction.MoveUp: active.Add(PlayerAction.MoveUp); break;
-                case PlayerAction.MoveDown: active.Add(PlayerAction.MoveDown); break;
-                case PlayerAction.MoveLeft: active.Add(PlayerAction.MoveLeft); break;
-                case PlayerAction.MoveRight: active.Add(PlayerAction.MoveRight); break;
+                switch (action)
+                {
+                    case PlayerAction.MoveUp: active.Add(PlayerAction.MoveUp); break;
+                    case PlayerAction.MoveDown: active.Add(PlayerAction.MoveDown); break;
+                    case PlayerAction.MoveLeft: active.Add(PlayerAction.MoveLeft); break;
+                    case PlayerAction.MoveRight: active.Add(PlayerAction.MoveRight); break;
 
-                case PlayerAction.StopMoveUp: active.Remove(PlayerAction.MoveUp); break;
-                case PlayerAction.StopMoveDown: active.Remove(PlayerAction.MoveDown); break;
-                case PlayerAction.StopMoveLeft: active.Remove(PlayerAction.MoveLeft); break;
-                case PlayerAction.StopMoveRight: active.Remove(PlayerAction.MoveRight); break;
+                    case PlayerAction.StopMoveUp: active.Remove(PlayerAction.MoveUp); break;
+                    case PlayerAction.StopMoveDown: active.Remove(PlayerAction.MoveDown); break;
+                    case PlayerAction.StopMoveLeft: active.Remove(PlayerAction.MoveLeft); break;
+                    case PlayerAction.StopMoveRight: active.Remove(PlayerAction.MoveRight); break;
+                }
             }
         }
 
@@ -192,9 +198,15 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 if (!_playerStates.TryGetValue(connectionId, out var state))
                     continue;
 
-                var moveVector = Vector2.Zero;
+                Vector2 moveVector = Vector2.Zero;
 
-                foreach (var action in actions)
+                HashSet<PlayerAction> actionsCopy;
+                lock (actions)
+                {
+                    actionsCopy = new HashSet<PlayerAction>(actions);
+                }
+
+                foreach (var action in actionsCopy)
                 {
                     switch (action)
                     {
@@ -210,7 +222,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                 var roomName = RoomManager.GetRoomNameByConnection(connectionId);
                 if (roomName != null)
                 {
-                    await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto //рассылаем сразу всей группе?
+                    await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
                     {
                         X = state.Position.X,
                         Y = state.Position.Y
@@ -221,11 +233,51 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             await UpdateBullets(0.015f); // или вычислять deltaTime по времени между кадрами
             await UpdateEnemyBullets(1f);
             await BotsShootAtPlayers();
+
+            UpdateEnemyBotPositions();
+            await BroadcastEnemyBots();
+        }
+
+        private async Task BroadcastEnemyBots()
+        {
+            foreach (var (botId, bot) in _enemyBots)
+            {
+                await _hubContext.Clients.All.ReceiveBotPosition(botId, new PlayerPositionDto
+                {
+                    X = bot.Position.X,
+                    Y = bot.Position.Y
+                });
+            }
+        }
+
+        private void UpdateEnemyBotPositions()
+        {
+            var now = DateTime.UtcNow;
+            var deltaTime = (float)(now - _lastUpdateTime).TotalSeconds;
+            _lastUpdateTime = now;
+
+            var botsToRemove = new List<string>();
+
+            foreach (var (botId, bot) in _enemyBots)
+            {
+                bot.Position = new Vector2(bot.Position.X, bot.Position.Y + BotSpeed * deltaTime);
+
+                if (bot.Position.Y > 1080) //TODO!!!
+                {
+                    botsToRemove.Add(botId);
+                }
+            }
+
+            foreach (var botId in botsToRemove)
+            {
+                _enemyBots.TryRemove(botId, out _);
+                _hubContext.Clients.All.BotDied(botId);
+            }
         }
 
         private bool IsOutOfBounds(float x, float y)
         {
-            return x < 0 || x > 1920 || y < 0 || y > 1080; // или любые твои границы
+            return x < 0 || x > 1920 || y < 0 || y > 1080;
         }
 
         private async Task UpdateEnemyBullets(float deltaTime)

@@ -28,7 +28,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         Task RemoveEnemyBullet(string bulletId);
         Task PlayerHit(string connectionId, int newHealth);
         Task PlayerDied(string connectionId);
-
+        Task ReceiveBotPosition(string botId, PlayerPositionDto playerPositionDto);
     }
 
     public class GameHub : Hub<IGameClient>
