@@ -1,450 +1,288 @@
-﻿using KnightsRPGGame.Service.GameAPI.Hubs;
+﻿using KnightsRPGGame.Service.GameAPI.GameComponents.Entities;
+using KnightsRPGGame.Service.GameAPI.Hubs;
+using KnightsRPGGame.Service.GameAPI.Hubs.Interfaces;
 using Microsoft.AspNetCore.SignalR;
-using System;
 using System.Collections.Concurrent;
 using System.Numerics;
 
-namespace KnightsRPGGame.Service.GameAPI.GameComponents
+namespace KnightsRPGGame.Service.GameAPI.GameComponents;
+
+public class FrameStreamer
 {
-    public enum PlayerAction
+    private const float BotSpeed = 15f;
+    private const float BulletHitRadius = 20f;
+    private readonly IHubContext<GameHub, IGameClient> _hubContext;
+
+    private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
+    private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
+    private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new();
+    private readonly Dictionary<string, BulletDto> _activeBullets = new();
+    private readonly Dictionary<string, EnemyBulletDto> _enemyBullets = new();
+
+    private readonly Random _rand = new();
+    private DateTime _lastUpdateTime = DateTime.UtcNow;
+
+    private Timer? _timer;
+    private bool _isStreaming;
+
+    public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext) => _hubContext = hubContext;
+
+    public bool HasPlayer()
     {
-        MoveUp,
-        MoveDown,
-        MoveLeft,
-        MoveRight,
-        StopMoveUp,
-        StopMoveDown,
-        StopMoveLeft,
-        StopMoveRight
+        return _playerStates.Any();
     }
 
-    public class EnemyBot
+    public bool TryGetPlayerPosition(string connectionId, out PlayerStateDto position)
     {
-        public string BotId { get; set; } = Guid.NewGuid().ToString();
-        public Vector2 Position { get; set; }
-        public int Health { get; set; } = 100;
-    }
-
-    public class PlayerState
-    {
-        public string ConnectionId { get; set; } // Идентификатор подключения игрока
-        public Vector2 Position { get; set; }    // Текущая позиция игрока (например, x, y)
-        public int Health { get; set; }          // Здоровье игрока (по желанию)
-        public int Score { get; set; }           // Очки игрока (по желанию)
-    }
-
-    public class PlayerPositionDto // TODO PlayerStateDto
-    {
-        public float X { get; set; }
-        public float Y { get; set; }
-        public int Health { get; set; }
-    }
-
-    public class BulletDto
-    {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
-        public string OwnerId { get; set; } = string.Empty;
-        public float X { get; set; }
-        public float Y { get; set; }
-        public float VelocityX { get; set; }
-        public float VelocityY { get; set; }
-    }
-
-    public class EnemyBulletDto
-    {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
-        public string ShooterBotId { get; set; } = string.Empty;
-        public float X { get; set; }
-        public float Y { get; set; }
-        public float VelocityX { get; set; }
-        public float VelocityY { get; set; }
-    }
-
-    public class FrameStreamer
-    {
-        private readonly IHubContext<GameHub, IGameClient> _hubContext;
-
-        // Храним состояние игроков
-        private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
-
-        private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new();
-
-        private readonly Dictionary<string, BulletDto> _activeBullets = new();
-
-        private readonly Dictionary<string, EnemyBulletDto> _enemyBullets = new();
-        private readonly Random _rand = new();
-
-        private DateTime _lastUpdateTime = DateTime.UtcNow;
-
-        // Активные действия (нажатые клавиши) по игроку
-        private readonly ConcurrentDictionary<string, HashSet<PlayerAction>> _activeActions = new();
-
-        private Timer? _timer;
-        private bool _isStreaming = false;
-
-        private float BotSpeed => 15;
-
-        public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext)
+        if (_playerStates.TryGetValue(connectionId, out var state))
         {
-            _hubContext = hubContext;
-        }
-
-        public async Task StartStreaming(string connectionId)
-        {
-            if (_isStreaming) return;
-
-            _isStreaming = true;
-            _timer = new Timer(async _ => await StartStreamingAsync(), null, 0, 15);// 60 фпс примерно
-
-            /*var roomName = RoomManager.GetRoomNameByConnection(connectionId);
-            if (roomName != null)
+            position = new PlayerStateDto
             {
-                await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
-                {
-                    X = 0,//TODO Инициализация изначальной позиции игрока
-                    Y = 0
-                });
-            }*/
-
-        }
-
-        public void AddEnemyBot(string botId, Vector2 position)
-        {
-            _enemyBots[botId] = new EnemyBot
-            {
-                BotId = botId,
-                Position = position
+                X = state.Position.X,
+                Y = state.Position.Y,
+                Health = state.Health,
             };
+            return true;
         }
 
-        public void AddEnemyBot(Vector2 position)
-        {
-            var bot = new EnemyBot
-            {
-                Position = position
-            };
+        position = default!;
+        return false;
+    }
 
-            _enemyBots[bot.BotId] = bot;
-        }
-
-        public bool TryGetPlayerPosition(string connectionId, out PlayerPositionDto position)
+    public void RegisterPlayer(string connectionId, Vector2 position)
+    {
+        _playerStates[connectionId] = new PlayerState
         {
-            if (_playerStates.TryGetValue(connectionId, out var state))
+            ConnectionId = connectionId,
+            Position = position
+        };
+    }
+
+    public void RemovePlayer(string connectionId)
+    {
+        _playerStates.TryRemove(connectionId, out _);
+        _activeActions.TryRemove(connectionId, out _);
+    }
+
+    public void UpdatePlayerAction(string connectionId, PlayerAction action)
+    {
+        _playerStates.TryAdd(connectionId, new PlayerState { ConnectionId = connectionId });
+        var actions = _activeActions.GetOrAdd(connectionId, _ => new HashSet<PlayerAction>());
+
+        lock (actions)
+        {
+            if (action.ToString().StartsWith("Stop"))
             {
-                position = new PlayerPositionDto
-                {
-                    X = state.Position.X,
-                    Y = state.Position.Y
-                };
-                return true;
+                var moveAction = (PlayerAction)Enum.Parse(typeof(PlayerAction), action.ToString().Replace("Stop", ""));
+                actions.Remove(moveAction);
             }
-
-            position = default!;
-            return false;
+            else actions.Add(action);
         }
+    }
 
-        public void RegisterPlayer(string connectionId, Vector2 position)
+    public async Task StartStreaming(string connectionId)
+    {
+        if (_isStreaming) return;
+        _isStreaming = true;
+        _timer = new Timer(async _ => await UpdateFrame(), null, 0, 15);
+    }
+
+    public void StopStreaming()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        _isStreaming = false;
+    }
+
+    private async Task UpdateFrame()
+    {
+        foreach (var (connectionId, state) in _playerStates)
         {
-            _playerStates[connectionId] = new PlayerState
+            UpdatePlayerMovement(connectionId);
+
+            var room = RoomManager.GetRoomNameByConnection(connectionId);
+            if (room == null) continue;
+
+            await _hubContext.Clients.Group(room).ReceivePlayerPosition(connectionId, new PlayerStateDto
             {
-                ConnectionId = connectionId,
-                Position = position,
-                Health = 100,
-                Score = 0
-            };
-        }
-
-        public void StopStreaming()
-        {
-            _timer?.Dispose();
-            _timer = null;
-            _isStreaming = false;
-        }
-
-        public void UpdatePlayerAction(string connectionId, PlayerAction action)
-        {
-            // Обеспечиваем, что у игрока есть начальное состояние
-            var playerState = _playerStates.GetOrAdd(connectionId, _ => new PlayerState
-            {
-                ConnectionId = connectionId,
-                Position = new Vector2(0, 0),
-                Health = 100,
-                Score = 0
+                X = state.Position.X,
+                Y = state.Position.Y,
+                Health = state.Health
             });
 
-            // Получаем или создаем список активных действий
-            var active = _activeActions.GetOrAdd(connectionId, _ => new HashSet<PlayerAction>());
-
-            lock (active)
-            {
-                switch (action)
-                {
-                    case PlayerAction.MoveUp: active.Add(PlayerAction.MoveUp); break;
-                    case PlayerAction.MoveDown: active.Add(PlayerAction.MoveDown); break;
-                    case PlayerAction.MoveLeft: active.Add(PlayerAction.MoveLeft); break;
-                    case PlayerAction.MoveRight: active.Add(PlayerAction.MoveRight); break;
-
-                    case PlayerAction.StopMoveUp: active.Remove(PlayerAction.MoveUp); break;
-                    case PlayerAction.StopMoveDown: active.Remove(PlayerAction.MoveDown); break;
-                    case PlayerAction.StopMoveLeft: active.Remove(PlayerAction.MoveLeft); break;
-                    case PlayerAction.StopMoveRight: active.Remove(PlayerAction.MoveRight); break;
-                }
-            }
-        }
-
-        public async Task StartStreamingAsync()
-        {
-            foreach (var (connectionId, state) in _playerStates)
-            {
-                Vector2 moveVector = Vector2.Zero;
-
-                if (_activeActions.TryGetValue(connectionId, out var actions))
-                {
-                    HashSet<PlayerAction> actionsCopy;
-                    lock (actions)
-                    {
-                        actionsCopy = new HashSet<PlayerAction>(actions);
-                    }
-
-                    foreach (var action in actionsCopy)
-                    {
-                        switch (action)
-                        {
-                            case PlayerAction.MoveUp: moveVector.Y -= 1; break;
-                            case PlayerAction.MoveDown: moveVector.Y += 1; break;
-                            case PlayerAction.MoveLeft: moveVector.X -= 1; break;
-                            case PlayerAction.MoveRight: moveVector.X += 1; break;
-                        }
-                    }
-
-                    state.Position += moveVector;
-                }
-
-                var roomName = RoomManager.GetRoomNameByConnection(connectionId);
-                if (roomName != null)
-                {
-                    await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
-                    {
-                        X = state.Position.X,
-                        Y = state.Position.Y,
-                        Health = state.Health
-                    });
-
-                    await UpdateBullets(0.015f, roomName); // или вычислять deltaTime по времени между кадрами
-                    await UpdateEnemyBullets(1f, roomName);
-                    await BotsShootAtPlayers(roomName);
-
-                    UpdateEnemyBotPositions(roomName);
-                    await BroadcastEnemyBots(connectionId, roomName);//TODO Убрать отсюда, либо изменить
-                }
-            }
-
-                
-        }
-
-        private async Task BroadcastEnemyBots(string connectionId, string roomName)
-        {
-            foreach (var (botId, bot) in _enemyBots)
-            {
-                await _hubContext.Clients.Group(roomName).ReceiveBotPosition(botId, new PlayerPositionDto
-                {
-                    X = bot.Position.X,
-                    Y = bot.Position.Y
-                });
-            }
-        }
-
-        private void UpdateEnemyBotPositions(string roomName)
-        {
-            var now = DateTime.UtcNow;
-            var deltaTime = (float)(now - _lastUpdateTime).TotalSeconds;
-            _lastUpdateTime = now;
-
-            var botsToRemove = new List<string>();
-
-            foreach (var (botId, bot) in _enemyBots)
-            {
-                bot.Position = new Vector2(bot.Position.X, bot.Position.Y + BotSpeed * deltaTime);
-
-                if (bot.Position.Y > 1080) //TODO!!!
-                {
-                    botsToRemove.Add(botId);
-                }
-            }
-
-            foreach (var botId in botsToRemove)
-            {
-                _enemyBots.TryRemove(botId, out _);
-                _hubContext.Clients.Group(roomName).BotDied(botId);
-            }
-        }
-
-        private bool IsOutOfBounds(float x, float y)
-        {
-            return x < 0 || x > 1920 || y < 0 || y > 1080;
-        }
-
-        private async Task UpdateEnemyBullets(float deltaTime, string roomName)
-        {
-            foreach (var bullet in _enemyBullets.Values.ToList())
-            {
-                bullet.X += bullet.VelocityX * deltaTime;
-                bullet.Y += bullet.VelocityY * deltaTime;
-
-                foreach (var (playerId, player) in _playerStates)
-                {
-                    float dx = player.Position.X - bullet.X;
-                    float dy = player.Position.Y - bullet.Y;
-                    float distanceSquared = dx * dx + dy * dy;
-
-                    const float hitRadius = 20f;
-                    if (distanceSquared <= hitRadius * hitRadius)
-                    {
-                        player.Health -= 1;
-
-                        await _hubContext.Clients.Group(roomName).PlayerHit(playerId, player.Health);
-                        if (player.Health <= 0)
-                        {
-                            await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
-                        }
-
-                        _enemyBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
-                        break;
-                    }
-                }
-
-                if (_enemyBullets.ContainsKey(bullet.Id))
-                {
-                    if (IsOutOfBounds(bullet.X, bullet.Y))
-                    {
-                        _enemyBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
-                    }
-                    else
-                    {
-                        await _hubContext.Clients.Group(roomName).UpdateEnemyBullet(bullet);
-                    }
-                }
-            }
-        }
-
-        private async Task BotsShootAtPlayers(string roomName)
-        {
-            foreach (var bot in _enemyBots.Values)
-            {
-                // Случайный шанс стрельбы
-                if (_rand.NextDouble() < 0.01) // 1% шанс каждый тик
-                {
-                    // Найдём ближайшего игрока
-                    var target = _playerStates.Values
-                        .OrderBy(p => Vector2.Distance(p.Position, bot.Position))
-                        .FirstOrDefault();
-
-                    if (target != null)
-                    {
-                        var direction = Vector2.Normalize(target.Position - bot.Position);
-                        var speed = 5f;
-
-                        var bullet = new EnemyBulletDto
-                        {
-                            ShooterBotId = bot.BotId,
-                            X = bot.Position.X,
-                            Y = bot.Position.Y,
-                            VelocityX = direction.X * speed,
-                            VelocityY = direction.Y * speed
-                        };
-
-                        _enemyBullets[bullet.Id] = bullet;
-
-                        await _hubContext.Clients.Group(roomName).SpawnEnemyBullet(bullet);
-                    }
-                }
-            }
-        }
-
-        public async Task ProcessShot(string connectionId, BulletDto bullet)
-        {
-            _activeBullets[bullet.Id] = bullet;
-        }
-
-        public async Task UpdateBullets(float deltaTime, string roomName)
-        {
-            foreach (var bullet in _activeBullets.Values.ToList())
-            {
-                bullet.X += bullet.VelocityX * deltaTime;
-                bullet.Y += bullet.VelocityY * deltaTime;
-
-                foreach (var (botId, bot) in _enemyBots)
-                {
-                    float dx = bot.Position.X - bullet.X;
-                    float dy = bot.Position.Y - bullet.Y;
-                    float distanceSquared = dx * dx + dy * dy;
-
-                    const float hitboxRadius = 20f;
-                    if (distanceSquared <= hitboxRadius * hitboxRadius)
-                    {
-                        // Попадание
-                        bot.Health -= 20;
-
-                        await _hubContext.Clients.Group(roomName).ReceiveBotHit(botId, bot.Health);
-
-                        if (bot.Health <= 0)
-                        {
-                            _enemyBots.TryRemove(botId, out _);
-                            await _hubContext.Clients.Group(roomName).BotDied(botId);
-                        }
-
-                        _activeBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
-
-                        break;
-                    }
-                }
-
-                if (_activeBullets.ContainsKey(bullet.Id))
-                {
-                    if (IsOutOfBounds(bullet))
-                    {
-                        _activeBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
-                    }
-                    else
-                    {
-                        await _hubContext.Clients.Group(roomName).UpdateBullet(bullet);
-                    }
-                }
-            }
-        }
-
-        private bool IsOutOfBounds(BulletDto bullet)
-        {
-            return bullet.Y < 0 || bullet.Y > 1000 || bullet.X < 0 || bullet.X > 1000;
-        }
-
-        private bool HitSomething(BulletDto bullet)
-        {
-            foreach (var bot in _enemyBots.Values)
-            {
-                if (MathF.Abs(bot.Position.X - bullet.X) < 10 &&
-                    MathF.Abs(bot.Position.Y - bullet.Y) < 10)
-                {
-                    bot.Health -= 20;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        public void RemovePlayer(string connectionId)
-        {
-            _playerStates.TryRemove(connectionId, out _);
-            _activeActions.TryRemove(connectionId, out _);
-        }
-
-        public bool HasPlayer()
-        {
-            return _playerStates.Any();
+            await UpdateBullets(0.015f, room);
+            await UpdateEnemyBullets(1f, room);
+            await BotsShootAtPlayers(room);
+            UpdateEnemyBotPositions(room);
+            await BroadcastEnemyBots(room);
         }
     }
+
+    private void UpdatePlayerMovement(string connectionId)
+    {
+        if (!_activeActions.TryGetValue(connectionId, out var actions)) return;
+
+        var moveVector = Vector2.Zero;
+        lock (actions)
+        {
+            foreach (var action in actions)
+            {
+                moveVector += action switch
+                {
+                    PlayerAction.MoveUp => new Vector2(0, -1),
+                    PlayerAction.MoveDown => new Vector2(0, 1),
+                    PlayerAction.MoveLeft => new Vector2(-1, 0),
+                    PlayerAction.MoveRight => new Vector2(1, 0),
+                    _ => Vector2.Zero
+                };
+            }
+        }
+        _playerStates[connectionId].Position += moveVector;
+    }
+
+    private async Task BroadcastEnemyBots(string room)
+    {
+        foreach (var (id, bot) in _enemyBots)
+        {
+            await _hubContext.Clients.Group(room).ReceiveBotPosition(id, new PlayerStateDto
+            {
+                X = bot.Position.X,
+                Y = bot.Position.Y,
+                Health = bot.Health
+            });
+        }
+    }
+
+    private void UpdateEnemyBotPositions(string room)
+    {
+        var delta = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
+        _lastUpdateTime = DateTime.UtcNow;
+
+        var toRemove = _enemyBots.Values
+            .Where(bot => (bot.Position += new Vector2(0, BotSpeed * delta)).Y > 1080)
+            .Select(bot => bot.BotId)
+            .ToList();
+
+        foreach (var id in toRemove)
+        {
+            _enemyBots.TryRemove(id, out _);
+            _hubContext.Clients.Group(room).BotDied(id);
+        }
+    }
+
+    private async Task UpdateEnemyBullets(float deltaTime, string room)
+    {
+        foreach (var bullet in _enemyBullets.Values.ToList())
+        {
+            bullet.X += bullet.VelocityX * deltaTime;
+            bullet.Y += bullet.VelocityY * deltaTime;
+
+            foreach (var (id, player) in _playerStates)
+            {
+                if (!IsHit(player.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
+
+                player.Health -= 1;
+                await _hubContext.Clients.Group(room).PlayerHit(id, player.Health);
+                if (player.Health <= 0)
+                    await _hubContext.Clients.Group(room).PlayerDied(id);
+
+                _enemyBullets.Remove(bullet.Id);
+                await _hubContext.Clients.Group(room).RemoveEnemyBullet(bullet.Id);
+                break;
+            }
+
+            if (!_enemyBullets.ContainsKey(bullet.Id)) continue;
+
+            if (IsOutOfBounds(bullet.X, bullet.Y))
+            {
+                _enemyBullets.Remove(bullet.Id);
+                await _hubContext.Clients.Group(room).RemoveEnemyBullet(bullet.Id);
+            }
+            else await _hubContext.Clients.Group(room).UpdateEnemyBullet(bullet);
+        }
+    }
+
+    private async Task UpdateBullets(float deltaTime, string room)
+    {
+        foreach (var bullet in _activeBullets.Values.ToList())
+        {
+            bullet.X += bullet.VelocityX * deltaTime;
+            bullet.Y += bullet.VelocityY * deltaTime;
+
+            foreach (var (botId, bot) in _enemyBots)
+            {
+                if (!IsHit(bot.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
+
+                bot.Health -= 20;
+                await _hubContext.Clients.Group(room).ReceiveBotHit(botId, bot.Health);
+
+                if (bot.Health <= 0)
+                {
+                    _enemyBots.TryRemove(botId, out _);
+                    await _hubContext.Clients.Group(room).BotDied(botId);
+                }
+
+                _activeBullets.Remove(bullet.Id);
+                await _hubContext.Clients.Group(room).RemoveBullet(bullet.Id);
+                break;
+            }
+
+            if (!_activeBullets.ContainsKey(bullet.Id)) continue;
+
+            if (IsOutOfBounds(bullet.X, bullet.Y))
+            {
+                _activeBullets.Remove(bullet.Id);
+                await _hubContext.Clients.Group(room).RemoveBullet(bullet.Id);
+            }
+            else await _hubContext.Clients.Group(room).UpdateBullet(bullet);
+        }
+    }
+
+    private async Task BotsShootAtPlayers(string room)
+    {
+        foreach (var bot in _enemyBots.Values)
+        {
+            if (_rand.NextDouble() > 0.01) continue;
+
+            var target = _playerStates.Values.OrderBy(p => Vector2.Distance(p.Position, bot.Position)).FirstOrDefault();
+            if (target == null) continue;
+
+            var dir = Vector2.Normalize(target.Position - bot.Position) * 5f;
+
+            var bullet = new EnemyBulletDto
+            {
+                ShooterBotId = bot.BotId,
+                X = bot.Position.X,
+                Y = bot.Position.Y,
+                VelocityX = dir.X,
+                VelocityY = dir.Y
+            };
+
+            _enemyBullets[bullet.Id] = bullet;
+            await _hubContext.Clients.Group(room).SpawnEnemyBullet(bullet);
+        }
+    }
+
+    public async Task ProcessShot(string connectionId, BulletDto bullet) => _activeBullets[bullet.Id] = bullet;
+
+    public void AddEnemyBot(string botId, Vector2 position)
+    {
+        var bot = new EnemyBot { BotId = botId, Position = position };
+        _enemyBots[bot.BotId] = bot;
+    }
+
+    public void AddEnemyBot(Vector2 position)
+    {
+        var bot = new EnemyBot { Position = position };
+        _enemyBots[bot.BotId] = bot;
+    }
+
+    private static bool IsHit(Vector2 target, float x, float y, float radius)
+    {
+        var dx = target.X - x;
+        var dy = target.Y - y;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    private static bool IsOutOfBounds(float x, float y) => x < 0 || x > 1920 || y < 0 || y > 1080;
 }

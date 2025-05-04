@@ -1,36 +1,11 @@
 ﻿using KnightsRPGGame.Service.GameAPI.GameComponents;
+using KnightsRPGGame.Service.GameAPI.GameComponents.Entities;
+using KnightsRPGGame.Service.GameAPI.Hubs.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 using System.Numerics;
 
 namespace KnightsRPGGame.Service.GameAPI.Hubs
 {
-    public interface IGameClient
-    {
-        Task RoomCreated(string roomName);
-        Task Error(string message);
-        Task PlayerJoined(string connectionId);
-        Task PlayerLeft(string connectionId);
-        Task ReceivePlayerList(List<string> connectionIds);
-        Task GameStarted(Dictionary<string, PlayerPositionDto> initialPositions, Dictionary<string, PlayerPositionDto> bots);
-        Task ReceivePlayerPosition(string connectionId, PlayerPositionDto position);
-
-        Task ReceiveBotHit(string botId, int health);
-        Task BotDied(string botId);
-        Task BulletFired(string connectionId, PlayerPositionDto startPosition);
-        Task ReceiveBotList(Dictionary<string, PlayerPositionDto> bots);
-        Task BulletHit(string connectionId);
-        Task SpawnBullet(BulletDto bullet);
-        Task RemoveBullet(string bulletId);
-        Task UpdateBullet(BulletDto bullet);
-
-        Task SpawnEnemyBullet(EnemyBulletDto bullet);
-        Task UpdateEnemyBullet(EnemyBulletDto bullet);
-        Task RemoveEnemyBullet(string bulletId);
-        Task PlayerHit(string connectionId, int newHealth);
-        Task PlayerDied(string connectionId);
-        Task ReceiveBotPosition(string botId, PlayerPositionDto playerPositionDto);
-    }
-
     public class GameHub : Hub<IGameClient>
     {
         private static GameManager _game;
@@ -49,26 +24,6 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             _game = game;
             _frameStreamer = frameStreamer;
         }
-
-        /*public override async Task OnConnectedAsync()
-        {
-            await base.OnConnectedAsync();
-            _frameStreamer.StartStreamingAsync(); // start the streaming task
-        }
-
-        public override async Task OnDisconnectedAsync(Exception exception)
-        {
-            var player = _game.GetPlayer(Context.ConnectionId);
-            
-            if (player != null) // LeftRoom()
-            {
-                var connectionId = Context.ConnectionId;
-                await _game.RemovePlayer(Context.ConnectionId);
-                await Clients.All.SendAsync("PlayerLeft", connectionId, player.name);
-            }
-
-            await base.OnDisconnectedAsync(exception);
-        }*/
 
         public override async Task OnConnectedAsync()
         {
@@ -115,9 +70,9 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
                             var botPos = new Vector2(x, y);
                             _frameStreamer.AddEnemyBot(botId, botPos);
 
-                            await Clients.Group(roomName).ReceiveBotList(new Dictionary<string, PlayerPositionDto>
+                            await Clients.Group(roomName).ReceiveBotList(new Dictionary<string, PlayerStateDto>
                     {
-                        { botId, new PlayerPositionDto { X = x, Y = y } }
+                        { botId, new PlayerStateDto { X = x, Y = y } }
                     });
                         }
                         catch (TaskCanceledException)
@@ -138,15 +93,15 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
         {
             var players = RoomManager.GetPlayersInRoom(roomName);
 
-            var playerPositions = new Dictionary<string, PlayerPositionDto>();
-            var botPositions = new Dictionary<string, PlayerPositionDto>();
+            var playerPositions = new Dictionary<string, PlayerStateDto>();
+            var botPositions = new Dictionary<string, PlayerStateDto>();
 
             foreach (var connectionId in players)
             {
                 var playerPos = new Vector2(0, 0);
                 _frameStreamer.RegisterPlayer(connectionId, playerPos);
 
-                playerPositions[connectionId] = new PlayerPositionDto
+                playerPositions[connectionId] = new PlayerStateDto
                 {
                     X = playerPos.X,
                     Y = playerPos.Y
@@ -158,7 +113,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
             var bot1Pos = new Vector2(200, 100);
             _frameStreamer.AddEnemyBot(bot1Id, bot1Pos);
 
-            botPositions[bot1Id] = new PlayerPositionDto
+            botPositions[bot1Id] = new PlayerStateDto
             {
                 X = bot1Pos.X,
                 Y = bot1Pos.Y
@@ -194,7 +149,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
             if (_frameStreamer.TryGetPlayerPosition(connectionId, out var position))
             {
-                await Clients.All.BulletFired(connectionId, new PlayerPositionDto
+                await Clients.All.BulletFired(connectionId, new PlayerStateDto
                 {
                     X = position.X,
                     Y = position.Y
@@ -300,23 +255,5 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs
 
             await Clients.Caller.ReceivePlayerList(players);
         }
-
-        /*public override async Task OnDisconnectedAsync(Exception exception)
-        {
-            // Тут можно дописать логику выхода из всех комнат
-            await base.OnDisconnectedAsync(exception);
-        }
-
-        public async Task AddPlayer(string name)
-        {
-            _game.AddPlayer(Context.ConnectionId, name);
-
-            await Clients.All.SendAsync("PlayerJoined", name);
-        }
-
-        public async Task RestartGame()
-        {
-            _game.Initializie("");
-        }*/
     }
 }
