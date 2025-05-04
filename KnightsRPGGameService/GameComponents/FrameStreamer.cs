@@ -33,10 +33,11 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public int Score { get; set; }           // Очки игрока (по желанию)
     }
 
-    public class PlayerPositionDto
+    public class PlayerPositionDto // TODO PlayerStateDto
     {
         public float X { get; set; }
         public float Y { get; set; }
+        public int Health { get; set; }
     }
 
     public class BulletDto
@@ -66,7 +67,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         // Храним состояние игроков
         private readonly ConcurrentDictionary<string, PlayerState> _playerStates = new();
 
-        private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new ();
+        private readonly ConcurrentDictionary<string, EnemyBot> _enemyBots = new();
 
         private readonly Dictionary<string, BulletDto> _activeBullets = new();
 
@@ -81,7 +82,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         private Timer? _timer;
         private bool _isStreaming = false;
 
-        private float BotSpeed => 15; 
+        private float BotSpeed => 15;
 
         public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext)
         {
@@ -193,31 +194,31 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
 
         public async Task StartStreamingAsync()
         {
-            foreach (var (connectionId, actions) in _activeActions)
+            foreach (var (connectionId, state) in _playerStates)
             {
-                if (!_playerStates.TryGetValue(connectionId, out var state))
-                    continue;
-
                 Vector2 moveVector = Vector2.Zero;
 
-                HashSet<PlayerAction> actionsCopy;
-                lock (actions)
+                if (_activeActions.TryGetValue(connectionId, out var actions))
                 {
-                    actionsCopy = new HashSet<PlayerAction>(actions);
-                }
-
-                foreach (var action in actionsCopy)
-                {
-                    switch (action)
+                    HashSet<PlayerAction> actionsCopy;
+                    lock (actions)
                     {
-                        case PlayerAction.MoveUp: moveVector.Y -= 1; break;
-                        case PlayerAction.MoveDown: moveVector.Y += 1; break;
-                        case PlayerAction.MoveLeft: moveVector.X -= 1; break;
-                        case PlayerAction.MoveRight: moveVector.X += 1; break;
+                        actionsCopy = new HashSet<PlayerAction>(actions);
                     }
-                }
 
-                state.Position += moveVector;
+                    foreach (var action in actionsCopy)
+                    {
+                        switch (action)
+                        {
+                            case PlayerAction.MoveUp: moveVector.Y -= 1; break;
+                            case PlayerAction.MoveDown: moveVector.Y += 1; break;
+                            case PlayerAction.MoveLeft: moveVector.X -= 1; break;
+                            case PlayerAction.MoveRight: moveVector.X += 1; break;
+                        }
+                    }
+
+                    state.Position += moveVector;
+                }
 
                 var roomName = RoomManager.GetRoomNameByConnection(connectionId);
                 if (roomName != null)
@@ -225,24 +226,27 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                     await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerPositionDto
                     {
                         X = state.Position.X,
-                        Y = state.Position.Y
+                        Y = state.Position.Y,
+                        Health = state.Health
                     });
+
+                    await UpdateBullets(0.015f, roomName); // или вычислять deltaTime по времени между кадрами
+                    await UpdateEnemyBullets(1f, roomName);
+                    await BotsShootAtPlayers(roomName);
+
+                    UpdateEnemyBotPositions(roomName);
+                    await BroadcastEnemyBots(connectionId, roomName);//TODO Убрать отсюда, либо изменить
                 }
             }
 
-            await UpdateBullets(0.015f); // или вычислять deltaTime по времени между кадрами
-            await UpdateEnemyBullets(1f);
-            await BotsShootAtPlayers();
-
-            UpdateEnemyBotPositions();
-            await BroadcastEnemyBots();
+                
         }
 
-        private async Task BroadcastEnemyBots()
+        private async Task BroadcastEnemyBots(string connectionId, string roomName)
         {
             foreach (var (botId, bot) in _enemyBots)
             {
-                await _hubContext.Clients.All.ReceiveBotPosition(botId, new PlayerPositionDto
+                await _hubContext.Clients.Group(roomName).ReceiveBotPosition(botId, new PlayerPositionDto
                 {
                     X = bot.Position.X,
                     Y = bot.Position.Y
@@ -250,7 +254,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             }
         }
 
-        private void UpdateEnemyBotPositions()
+        private void UpdateEnemyBotPositions(string roomName)
         {
             var now = DateTime.UtcNow;
             var deltaTime = (float)(now - _lastUpdateTime).TotalSeconds;
@@ -271,7 +275,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             foreach (var botId in botsToRemove)
             {
                 _enemyBots.TryRemove(botId, out _);
-                _hubContext.Clients.All.BotDied(botId);
+                _hubContext.Clients.Group(roomName).BotDied(botId);
             }
         }
 
@@ -280,7 +284,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             return x < 0 || x > 1920 || y < 0 || y > 1080;
         }
 
-        private async Task UpdateEnemyBullets(float deltaTime)
+        private async Task UpdateEnemyBullets(float deltaTime, string roomName)
         {
             foreach (var bullet in _enemyBullets.Values.ToList())
             {
@@ -298,14 +302,14 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                     {
                         player.Health -= 1;
 
-                        await _hubContext.Clients.All.PlayerHit(playerId, player.Health);
+                        await _hubContext.Clients.Group(roomName).PlayerHit(playerId, player.Health);
                         if (player.Health <= 0)
                         {
-                            await _hubContext.Clients.All.PlayerDied(playerId);
+                            await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
                         }
 
                         _enemyBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.All.RemoveEnemyBullet(bullet.Id);
+                        await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
                         break;
                     }
                 }
@@ -315,17 +319,17 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                     if (IsOutOfBounds(bullet.X, bullet.Y))
                     {
                         _enemyBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.All.RemoveEnemyBullet(bullet.Id);
+                        await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
                     }
                     else
                     {
-                        await _hubContext.Clients.All.UpdateEnemyBullet(bullet);
+                        await _hubContext.Clients.Group(roomName).UpdateEnemyBullet(bullet);
                     }
                 }
             }
         }
 
-        private async Task BotsShootAtPlayers()
+        private async Task BotsShootAtPlayers(string roomName)
         {
             foreach (var bot in _enemyBots.Values)
             {
@@ -353,7 +357,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
 
                         _enemyBullets[bullet.Id] = bullet;
 
-                        await _hubContext.Clients.All.SpawnEnemyBullet(bullet);
+                        await _hubContext.Clients.Group(roomName).SpawnEnemyBullet(bullet);
                     }
                 }
             }
@@ -364,7 +368,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             _activeBullets[bullet.Id] = bullet;
         }
 
-        public async Task UpdateBullets(float deltaTime)
+        public async Task UpdateBullets(float deltaTime, string roomName)
         {
             foreach (var bullet in _activeBullets.Values.ToList())
             {
@@ -383,16 +387,16 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                         // Попадание
                         bot.Health -= 20;
 
-                        await _hubContext.Clients.All.ReceiveBotHit(botId, bot.Health);
+                        await _hubContext.Clients.Group(roomName).ReceiveBotHit(botId, bot.Health);
 
                         if (bot.Health <= 0)
                         {
                             _enemyBots.TryRemove(botId, out _);
-                            await _hubContext.Clients.All.BotDied(botId);
+                            await _hubContext.Clients.Group(roomName).BotDied(botId);
                         }
 
                         _activeBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.All.RemoveBullet(bullet.Id);
+                        await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
 
                         break;
                     }
@@ -403,11 +407,11 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
                     if (IsOutOfBounds(bullet))
                     {
                         _activeBullets.Remove(bullet.Id);
-                        await _hubContext.Clients.All.RemoveBullet(bullet.Id);
+                        await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
                     }
                     else
                     {
-                        await _hubContext.Clients.All.UpdateBullet(bullet);
+                        await _hubContext.Clients.Group(roomName).UpdateBullet(bullet);
                     }
                 }
             }
