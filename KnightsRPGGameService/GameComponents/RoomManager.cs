@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using KnightsRPGGame.Service.GameAPI.GameComponents.Entities;
+using System.Collections.Concurrent;
 
 namespace KnightsRPGGame.Service.GameAPI.GameComponents
 {
@@ -9,11 +10,16 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public int MaxPlayers { get; set; } = 4;
 
         public bool IsFull => Players.Count >= MaxPlayers;
+
+        public Dictionary<string, PlayerStateDto> Bots { get; set; } = new();
+        public Dictionary<string, BulletDto> Bullets { get; set; } = new();
     }
 
     public static class RoomManager
     {
         private static ConcurrentDictionary<string, GameRoom> rooms = new ConcurrentDictionary<string, GameRoom>();
+
+        public static GameRoom? GetRoom(string roomName) => rooms.TryGetValue(roomName, out var room) ? room : null;
 
         public static bool CreateRoom(string roomName, int maxPlayers = 4)
         {
