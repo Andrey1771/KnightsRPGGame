@@ -183,7 +183,7 @@ public class GameHub : Hub<IGameClient>
 
                         var botId = Guid.NewGuid().ToString();
                         var botPos = new Vector2(random.Next(50, 750), 0);
-                        _frameStreamer.AddEnemyBot(botId, botPos);
+                        _frameStreamer.AddEnemyBot(botId, botPos, roomName);
 
                         var room = RoomManager.GetRoom(roomName);
                         if (room != null)

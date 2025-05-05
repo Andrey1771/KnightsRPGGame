@@ -279,13 +279,12 @@ public class FrameStreamer
         room.PlayerBullets[bullet.Id] = bullet;
     }
 
-    public void AddEnemyBot(string botId, Vector2 position)
+    public void AddEnemyBot(string botId, Vector2 position, string roomName)
     {
-        foreach (var room in _rooms.Values)
-        {
-            var bot = new EnemyBot { BotId = botId, Position = position };
-            room.Bots[botId] = bot;
-        }
+        if (!_rooms.TryGetValue(roomName, out var room)) return;
+
+        var bot = new EnemyBot { BotId = botId, Position = position };
+        room.Bots[botId] = bot;
     }
 
     private RoomState GetOrCreateRoom(string roomName)
