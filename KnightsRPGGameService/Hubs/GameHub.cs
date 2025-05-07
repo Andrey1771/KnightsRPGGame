@@ -139,7 +139,7 @@ public class GameHub : Hub<IGameClient>
                 X = position.X,
                 Y = position.Y,
                 VelocityX = 0,
-                VelocityY = -300
+                VelocityY = -300 // TODO
             };
 
             var room = RoomManager.GetRoom(roomName);
@@ -182,7 +182,7 @@ public class GameHub : Hub<IGameClient>
                         await Task.Delay(TimeSpan.FromSeconds(5), token);
 
                         var botId = Guid.NewGuid().ToString();
-                        var botPos = new Vector2(random.Next(50, 750), 0);
+                        var botPos = new Vector2(random.Next(50, 640 - 50), 0); //TODO
                         _frameStreamer.AddEnemyBot(botId, botPos, roomName);
 
                         var room = RoomManager.GetRoom(roomName);

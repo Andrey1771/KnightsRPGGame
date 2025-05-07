@@ -95,6 +95,9 @@ public class FrameStreamer
     {
         foreach (var (roomName, room) in _rooms)
         {
+            var currentTime = DateTime.UtcNow;
+            var deltaSeconds = (float)(currentTime - _lastUpdateTime).TotalSeconds;
+
             foreach (var (connectionId, playerState) in room.Players)
             {
                 UpdatePlayerMovement(room, connectionId);
@@ -112,6 +115,10 @@ public class FrameStreamer
             await BotsShootAtPlayers(room, roomName);
             UpdateEnemyBotPositions(room, roomName);
             await BroadcastEnemyBots(room, roomName);
+
+            room.Score += deltaSeconds;
+
+            await _hubContext.Clients.Group(roomName).UpdateScore(room.Score);
         }
 
         _lastUpdateTime = DateTime.UtcNow;
@@ -166,6 +173,9 @@ public class FrameStreamer
                 {
                     room.Bots.TryRemove(botId, out _);
                     await _hubContext.Clients.Group(roomName).BotDied(botId);
+
+                    room.Score += 10;
+                    await _hubContext.Clients.Group(roomName).UpdateScore(room.Score);
                 }
 
                 room.PlayerBullets.Remove(bullet.Id);
@@ -313,5 +323,6 @@ public class FrameStreamer
         public ConcurrentDictionary<string, HashSet<PlayerAction>> Actions { get; } = new();
         public Dictionary<string, BulletDto> PlayerBullets { get; } = new();
         public Dictionary<string, EnemyBulletDto> BotBullets { get; } = new();
+        public float Score { get; set; } = 0;
     }
 }
