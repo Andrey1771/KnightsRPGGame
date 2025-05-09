@@ -91,6 +91,7 @@ public class FrameStreamer
     {
         if (_isStreaming) return;
         _isStreaming = true;
+        _lastUpdateTime = DateTime.UtcNow;
         _timer = new Timer(async _ => await UpdateFrame(), null, 0, 15);
     }
 
