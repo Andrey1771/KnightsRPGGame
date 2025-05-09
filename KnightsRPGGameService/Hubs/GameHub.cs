@@ -56,9 +56,22 @@ public class GameHub : Hub<IGameClient>
 
     public async Task JoinRoom(string roomName)
     {
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null)
+        {
+            await Clients.Caller.Error("Room does not exist.");
+            return;
+        }
+
+        if (room.State.IsGameStarted)
+        {
+            await Clients.Caller.Error("Cannot join, game already started.");
+            return;
+        }
+
         if (!_roomManager.AddPlayerToRoom(roomName, Context.ConnectionId))
         {
-            await Clients.Caller.Error("Failed to join room (room full or doesn't exist).");
+            await Clients.Caller.Error("Failed to join room (room full or already joined).");
             return;
         }
 
@@ -66,6 +79,7 @@ public class GameHub : Hub<IGameClient>
         await Clients.Group(roomName).PlayerJoined(Context.ConnectionId);
         await UpdatePlayerList(roomName);
     }
+
 
     public async Task LeaveRoom(string roomName)
     {
@@ -91,7 +105,20 @@ public class GameHub : Hub<IGameClient>
     public async Task StartGame(string roomName)
     {
         var room = _roomManager.GetRoom(roomName);
-        if (room == null) return;
+
+        if (room == null)
+        {
+            await Clients.Caller.Error("Room does not exist.");
+            return;
+        }
+
+        if (room.State.IsGameStarted)
+        {
+            await Clients.Caller.Error("Cannot join, game already started.");
+            return;
+        }
+
+        room.State.IsGameStarted = true;
 
         var playerPositions = new Dictionary<string, PlayerStateDto>();
         var botPositions = new Dictionary<string, PlayerStateDto>();
