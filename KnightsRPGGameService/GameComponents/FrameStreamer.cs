@@ -3,7 +3,6 @@ using KnightsRPGGame.Service.GameAPI.Hubs;
 using KnightsRPGGame.Service.GameAPI.Hubs.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace KnightsRPGGame.Service.GameAPI.GameComponents;
@@ -12,23 +11,29 @@ public class FrameStreamer
 {
     private const float BotSpeed = 15f;
     private const float BulletHitRadius = 20f;
+
     private readonly IHubContext<GameHub, IGameClient> _hubContext;
+    private readonly RoomManager _roomManager;
     private readonly Random _rand = new();
+
     private Timer? _timer;
     private bool _isStreaming;
-
-    private readonly ConcurrentDictionary<string, RoomState> _rooms = new();
     private DateTime _lastUpdateTime = DateTime.UtcNow;
 
-    public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext) => _hubContext = hubContext;
+    public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext, RoomManager roomManager)
+    {
+        _hubContext = hubContext;
+        _roomManager = roomManager;
+    }
 
-    public bool HasPlayer() => _rooms.Values.Any(room => room.Players.Any());
+    public bool HasPlayer() =>
+        _roomManager.GetAllRooms().Any(room => room.State.Players.Any());
 
     public bool TryGetPlayerPosition(string connectionId, out PlayerStateDto position)
     {
-        foreach (var room in _rooms.Values)
+        foreach (var room in _roomManager.GetAllRooms())
         {
-            if (room.Players.TryGetValue(connectionId, out var state))
+            if (room.State.Players.TryGetValue(connectionId, out var state))
             {
                 position = new PlayerStateDto { X = state.Position.X, Y = state.Position.Y, Health = state.Health };
                 return true;
@@ -41,31 +46,36 @@ public class FrameStreamer
 
     public void RegisterPlayer(string connectionId, Vector2 position)
     {
-        var roomName = RoomManager.GetRoomNameByConnection(connectionId);
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
         if (roomName == null) return;
 
-        var room = GetOrCreateRoom(roomName);
-        room.Players[connectionId] = new PlayerState { ConnectionId = connectionId, Position = position };
+        var room = _roomManager.GetRoom(roomName);
+        room?.State.Players.TryAdd(connectionId, new PlayerState { ConnectionId = connectionId, Position = position });
     }
 
     public void RemovePlayer(string connectionId)
     {
-        var roomName = RoomManager.GetRoomNameByConnection(connectionId);
-        if (roomName == null || !_rooms.TryGetValue(roomName, out var room)) return;
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
+        if (roomName == null) return;
 
-        room.Players.Remove(connectionId, out var player);
-        room.Actions.Remove(connectionId, out var action);
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null) return;
+
+        room.State.Players.Remove(connectionId, out _);
+        room.State.Actions.Remove(connectionId, out _);
     }
 
     public void UpdatePlayerAction(string connectionId, PlayerAction action)
     {
-        var roomName = RoomManager.GetRoomNameByConnection(connectionId);
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
         if (roomName == null) return;
 
-        var room = GetOrCreateRoom(roomName);
-        room.Players.TryAdd(connectionId, new PlayerState { ConnectionId = connectionId });
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null) return;
 
-        var actions = room.Actions.GetOrAdd(connectionId, _ => new HashSet<PlayerAction>());
+        room.State.Players.TryAdd(connectionId, new PlayerState { ConnectionId = connectionId });
+
+        var actions = room.State.Actions.GetOrAdd(connectionId, _ => new HashSet<PlayerAction>());
         lock (actions)
         {
             if (action.ToString().StartsWith("Stop"))
@@ -93,14 +103,17 @@ public class FrameStreamer
 
     private async Task UpdateFrame()
     {
-        foreach (var (roomName, room) in _rooms)
+        foreach (var room in _roomManager.GetAllRooms())
         {
+            var roomName = room.RoomName;
+            var state = room.State;
+
             var currentTime = DateTime.UtcNow;
             var deltaSeconds = (float)(currentTime - _lastUpdateTime).TotalSeconds;
 
-            foreach (var (connectionId, playerState) in room.Players)
+            foreach (var (connectionId, playerState) in state.Players)
             {
-                UpdatePlayerMovement(room, connectionId);
+                UpdatePlayerMovement(state, connectionId);
 
                 await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerStateDto
                 {
@@ -110,23 +123,22 @@ public class FrameStreamer
                 });
             }
 
-            await UpdateBullets(0.015f, room, roomName);
-            await UpdateEnemyBullets(1f, room, roomName);
-            await BotsShootAtPlayers(room, roomName);
-            UpdateEnemyBotPositions(room, roomName);
-            await BroadcastEnemyBots(room, roomName);
+            await UpdateBullets(0.015f, state, roomName);
+            await UpdateEnemyBullets(1f, state, roomName);
+            await BotsShootAtPlayers(state, roomName);
+            UpdateEnemyBotPositions(state, roomName);
+            await BroadcastEnemyBots(state, roomName);
 
-            room.Score += deltaSeconds;
-
-            await _hubContext.Clients.Group(roomName).UpdateScore(room.Score);
+            state.Score += deltaSeconds;
+            await _hubContext.Clients.Group(roomName).UpdateScore(state.Score);
         }
 
         _lastUpdateTime = DateTime.UtcNow;
     }
 
-    private void UpdatePlayerMovement(RoomState room, string connectionId)
+    private void UpdatePlayerMovement(GameRoom.RoomState state, string connectionId)
     {
-        if (!room.Actions.TryGetValue(connectionId, out var actions)) return;
+        if (!state.Actions.TryGetValue(connectionId, out var actions)) return;
 
         var moveVector = Vector2.Zero;
         lock (actions)
@@ -144,25 +156,22 @@ public class FrameStreamer
             }
         }
 
-        if (moveVector == Vector2.Zero)
-            return;
+        if (moveVector == Vector2.Zero) return;
 
         moveVector = Vector2.Normalize(moveVector);
-
         var deltaTime = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
-        var speed = 200f; // скорость движения игрока
-
-        room.Players[connectionId].Position += moveVector * speed * deltaTime;
+        var speed = 200f;
+        state.Players[connectionId].Position += moveVector * speed * deltaTime;
     }
 
-    private async Task UpdateBullets(float deltaTime, RoomState room, string roomName)
+    private async Task UpdateBullets(float deltaTime, GameRoom.RoomState state, string roomName)
     {
-        foreach (var bullet in room.PlayerBullets.Values.ToList())
+        foreach (var bullet in state.PlayerBullets.Values.ToList())
         {
             bullet.X += bullet.VelocityX * deltaTime;
             bullet.Y += bullet.VelocityY * deltaTime;
 
-            foreach (var (botId, bot) in room.Bots)
+            foreach (var (botId, bot) in state.Bots)
             {
                 if (!IsHit(bot.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
 
@@ -171,37 +180,37 @@ public class FrameStreamer
 
                 if (bot.Health <= 0)
                 {
-                    room.Bots.TryRemove(botId, out _);
+                    state.Bots.TryRemove(botId, out _);
                     await _hubContext.Clients.Group(roomName).BotDied(botId);
 
-                    room.Score += 10;
-                    await _hubContext.Clients.Group(roomName).UpdateScore(room.Score);
+                    state.Score += 10;
+                    await _hubContext.Clients.Group(roomName).UpdateScore(state.Score);
                 }
 
-                room.PlayerBullets.Remove(bullet.Id);
+                state.PlayerBullets.Remove(bullet.Id);
                 await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
                 break;
             }
 
-            if (!room.PlayerBullets.ContainsKey(bullet.Id)) continue;
+            if (!state.PlayerBullets.ContainsKey(bullet.Id)) continue;
 
             if (IsOutOfBounds(bullet.X, bullet.Y))
             {
-                room.PlayerBullets.Remove(bullet.Id);
+                state.PlayerBullets.Remove(bullet.Id);
                 await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
             }
             else await _hubContext.Clients.Group(roomName).UpdateBullet(bullet);
         }
     }
 
-    private async Task UpdateEnemyBullets(float deltaTime, RoomState room, string roomName)
+    private async Task UpdateEnemyBullets(float deltaTime, GameRoom.RoomState state, string roomName)
     {
-        foreach (var bullet in room.BotBullets.Values.ToList())
+        foreach (var bullet in state.BotBullets.Values.ToList())
         {
             bullet.X += bullet.VelocityX * deltaTime;
             bullet.Y += bullet.VelocityY * deltaTime;
 
-            foreach (var (playerId, player) in room.Players)
+            foreach (var (playerId, player) in state.Players)
             {
                 if (!IsHit(player.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
 
@@ -210,29 +219,29 @@ public class FrameStreamer
                 if (player.Health <= 0)
                     await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
 
-                room.BotBullets.Remove(bullet.Id);
+                state.BotBullets.Remove(bullet.Id);
                 await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
                 break;
             }
 
-            if (!room.BotBullets.ContainsKey(bullet.Id)) continue;
+            if (!state.BotBullets.ContainsKey(bullet.Id)) continue;
 
             if (IsOutOfBounds(bullet.X, bullet.Y))
             {
-                room.BotBullets.Remove(bullet.Id);
+                state.BotBullets.Remove(bullet.Id);
                 await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
             }
             else await _hubContext.Clients.Group(roomName).UpdateEnemyBullet(bullet);
         }
     }
 
-    private async Task BotsShootAtPlayers(RoomState room, string roomName)
+    private async Task BotsShootAtPlayers(GameRoom.RoomState state, string roomName)
     {
-        foreach (var bot in room.Bots.Values)
+        foreach (var bot in state.Bots.Values)
         {
             if (_rand.NextDouble() > 0.01) continue;
 
-            var target = room.Players.Values.OrderBy(p => Vector2.Distance(p.Position, bot.Position)).FirstOrDefault();
+            var target = state.Players.Values.OrderBy(p => Vector2.Distance(p.Position, bot.Position)).FirstOrDefault();
             if (target == null) continue;
 
             var dir = Vector2.Normalize(target.Position - bot.Position) * 5f;
@@ -246,30 +255,30 @@ public class FrameStreamer
                 VelocityY = dir.Y
             };
 
-            room.BotBullets[bullet.Id] = bullet;
+            state.BotBullets[bullet.Id] = bullet;
             await _hubContext.Clients.Group(roomName).SpawnEnemyBullet(bullet);
         }
     }
 
-    private void UpdateEnemyBotPositions(RoomState room, string roomName)
+    private void UpdateEnemyBotPositions(GameRoom.RoomState state, string roomName)
     {
         var delta = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
 
-        var toRemove = room.Bots.Values
+        var toRemove = state.Bots.Values
             .Where(bot => (bot.Position += new Vector2(0, BotSpeed * delta)).Y > 1080)
             .Select(bot => bot.BotId)
             .ToList();
 
         foreach (var id in toRemove)
         {
-            room.Bots.TryRemove(id, out _);
+            state.Bots.TryRemove(id, out _);
             _hubContext.Clients.Group(roomName).BotDied(id);
         }
     }
 
-    private async Task BroadcastEnemyBots(RoomState room, string roomName)
+    private async Task BroadcastEnemyBots(GameRoom.RoomState state, string roomName)
     {
-        foreach (var (id, bot) in room.Bots)
+        foreach (var (id, bot) in state.Bots)
         {
             await _hubContext.Clients.Group(roomName).ReceiveBotPosition(id, new PlayerStateDto
             {
@@ -282,29 +291,20 @@ public class FrameStreamer
 
     public async Task ProcessShot(string connectionId, BulletDto bullet)
     {
-        var roomName = RoomManager.GetRoomNameByConnection(connectionId);
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
         if (roomName == null) return;
 
-        var room = GetOrCreateRoom(roomName);
-        room.PlayerBullets[bullet.Id] = bullet;
+        var room = _roomManager.GetRoom(roomName);
+        room?.State.PlayerBullets.TryAdd(bullet.Id, bullet);
     }
 
     public void AddEnemyBot(string botId, Vector2 position, string roomName)
     {
-        if (!_rooms.TryGetValue(roomName, out var room)) return;
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null) return;
 
         var bot = new EnemyBot { BotId = botId, Position = position };
-        room.Bots[botId] = bot;
-    }
-
-    private RoomState GetOrCreateRoom(string roomName)
-    {
-        if (!_rooms.TryGetValue(roomName, out var room))
-        {
-            room = new RoomState();
-            _rooms[roomName] = room;
-        }
-        return room;
+        room.State.Bots[botId] = bot;
     }
 
     private static bool IsHit(Vector2 target, float x, float y, float radius)
@@ -315,14 +315,4 @@ public class FrameStreamer
     }
 
     private static bool IsOutOfBounds(float x, float y) => x < 0 || x > 1920 || y < 0 || y > 1080;
-
-    public class RoomState
-    {
-        public ConcurrentDictionary<string, PlayerState> Players { get; } = new();
-        public ConcurrentDictionary<string, EnemyBot> Bots { get; } = new();
-        public ConcurrentDictionary<string, HashSet<PlayerAction>> Actions { get; } = new();
-        public Dictionary<string, BulletDto> PlayerBullets { get; } = new();
-        public Dictionary<string, EnemyBulletDto> BotBullets { get; } = new();
-        public float Score { get; set; } = 0;
-    }
 }

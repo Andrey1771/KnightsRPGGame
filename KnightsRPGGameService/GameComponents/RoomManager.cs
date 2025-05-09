@@ -8,20 +8,31 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public string RoomName { get; set; }
         public List<string> Players { get; set; } = new List<string>();
         public int MaxPlayers { get; set; } = 4;
-
         public bool IsFull => Players.Count >= MaxPlayers;
 
-        public Dictionary<string, PlayerStateDto> Bots { get; set; } = new();
-        public Dictionary<string, BulletDto> Bullets { get; set; } = new();
+        public RoomState State { get; set; } = new RoomState();
+
+        public class RoomState
+        {
+            public ConcurrentDictionary<string, PlayerState> Players { get; } = new();
+            public ConcurrentDictionary<string, EnemyBot> Bots { get; } = new();
+            public ConcurrentDictionary<string, HashSet<PlayerAction>> Actions { get; } = new();
+            public Dictionary<string, BulletDto> PlayerBullets { get; } = new();
+            public Dictionary<string, EnemyBulletDto> BotBullets { get; } = new();
+            public float Score { get; set; } = 0;
+
+            public readonly Dictionary<string, CancellationTokenSource> BotSpawners = new();//TODO
+        }
     }
 
-    public static class RoomManager
+
+    public class RoomManager
     {
-        private static ConcurrentDictionary<string, GameRoom> rooms = new ConcurrentDictionary<string, GameRoom>();
+        private ConcurrentDictionary<string, GameRoom> rooms = new ConcurrentDictionary<string, GameRoom>();
 
-        public static GameRoom? GetRoom(string roomName) => rooms.TryGetValue(roomName, out var room) ? room : null;
+        public GameRoom? GetRoom(string roomName) => rooms.TryGetValue(roomName, out var room) ? room : null;
 
-        public static bool CreateRoom(string roomName, int maxPlayers = 4)
+        public bool CreateRoom(string roomName, int maxPlayers = 4)
         {
             return rooms.TryAdd(roomName, new GameRoom
             {
@@ -30,7 +41,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             });
         }
 
-        public static bool AddPlayerToRoom(string roomName, string connectionId)
+        public bool AddPlayerToRoom(string roomName, string connectionId)
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
@@ -43,27 +54,20 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             return false;
         }
 
-        public static void RemovePlayerFromRoom(string roomName, string connectionId)
+        public void RemovePlayerFromRoom(string roomName, string connectionId)
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
                 room.Players.Remove(connectionId);
-                if (room.Players.Count == 0)
-                {
-                    rooms.TryRemove(roomName, out _);
-                }
             }
         }
 
-        public static void RemovePlayerFromAllRooms(string connectionId)
+        public void RemoveRoom(string roomName)
         {
-            if (rooms.TryGetValue(connectionId, out var room))
-            {
-                RemovePlayerFromRoom(room.RoomName, connectionId);
-            }
+            rooms.TryRemove(roomName, out _);
         }
 
-        public static List<string> GetPlayersInRoom(string roomName)
+        public List<string> GetPlayersInRoom(string roomName)
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
@@ -72,12 +76,12 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             return new List<string>();
         }
 
-        public static IEnumerable<GameRoom> GetAllRooms()
+        public IEnumerable<GameRoom> GetAllRooms()
         {
             return rooms.Values;
         }
         
-        public static string? GetRoomNameByConnection(string connectionId)
+        public string? GetRoomNameByConnection(string connectionId)
         {
             foreach (var room in rooms)
             {

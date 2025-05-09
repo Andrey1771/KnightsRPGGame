@@ -9,15 +9,15 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs;
 public class GameHub : Hub<IGameClient>
 {
     private readonly FrameStreamer _frameStreamer;
+    private readonly RoomManager _roomManager;
     private static readonly Dictionary<string, DateTime> _lastShotTime = new();
     private static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500);
-
-    private readonly Dictionary<string, CancellationTokenSource> _botSpawners = new();
     private readonly object _botSpawnerLock = new();
 
-    public GameHub(FrameStreamer frameStreamer)
+    public GameHub(FrameStreamer frameStreamer, RoomManager roomManager)
     {
         _frameStreamer = frameStreamer;
+        _roomManager = roomManager;
     }
 
     public override async Task OnConnectedAsync() => await base.OnConnectedAsync();
@@ -26,22 +26,16 @@ public class GameHub : Hub<IGameClient>
     {
         _frameStreamer.RemovePlayer(Context.ConnectionId);
 
-        if (!_frameStreamer.HasPlayer())
-        {
-            _frameStreamer.StopStreaming();
-            
-            var room = RoomManager.GetRoomNameByConnection(Context.ConnectionId);
-            if (room != null)
-            {
-                StopBotSpawningLoop(room);
-            }
-        }
-
-        var roomName = RoomManager.GetRoomNameByConnection(Context.ConnectionId);
+        var roomName = _roomManager.GetRoomNameByConnection(Context.ConnectionId);
         if (roomName != null)
         {
-            RoomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
+            _roomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
             await Clients.Group(roomName).PlayerLeft(Context.ConnectionId);
+            if (_roomManager.GetPlayersInRoom(roomName).Count == 0)
+            {
+                TryShutdownRoomIfEmpty(roomName);
+                _roomManager.RemoveRoom(roomName);
+            }
         }
 
         await base.OnDisconnectedAsync(exception);
@@ -49,20 +43,20 @@ public class GameHub : Hub<IGameClient>
 
     public async Task CreateRoom(string roomName, int maxPlayers = 4)
     {
-        if (!RoomManager.CreateRoom(roomName, maxPlayers))
+        if (!_roomManager.CreateRoom(roomName, maxPlayers))
         {
             await Clients.Caller.Error("Room already exists.");
             return;
         }
 
-        RoomManager.AddPlayerToRoom(roomName, Context.ConnectionId);
+        _roomManager.AddPlayerToRoom(roomName, Context.ConnectionId);
         await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
         await Clients.Caller.RoomCreated(roomName);
     }
 
     public async Task JoinRoom(string roomName)
     {
-        if (!RoomManager.AddPlayerToRoom(roomName, Context.ConnectionId))
+        if (!_roomManager.AddPlayerToRoom(roomName, Context.ConnectionId))
         {
             await Clients.Caller.Error("Failed to join room (room full or doesn't exist).");
             return;
@@ -75,7 +69,12 @@ public class GameHub : Hub<IGameClient>
 
     public async Task LeaveRoom(string roomName)
     {
-        RoomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
+        _roomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
+        if (_roomManager.GetPlayersInRoom(roomName).Count == 0)
+        {
+            TryShutdownRoomIfEmpty(roomName);
+            _roomManager.RemoveRoom(roomName);
+        }
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName);
         await Clients.Group(roomName).PlayerLeft(Context.ConnectionId);
         await UpdatePlayerList(roomName);
@@ -83,7 +82,7 @@ public class GameHub : Hub<IGameClient>
 
     public async Task UpdatePlayerList(string roomName)
     {
-        var players = RoomManager.GetPlayersInRoom(roomName);
+        var players = _roomManager.GetPlayersInRoom(roomName);
         await Clients.Group(roomName).ReceivePlayerList(players);
     }
 
@@ -91,7 +90,7 @@ public class GameHub : Hub<IGameClient>
 
     public async Task StartGame(string roomName)
     {
-        var room = RoomManager.GetRoom(roomName);
+        var room = _roomManager.GetRoom(roomName);
         if (room == null) return;
 
         var playerPositions = new Dictionary<string, PlayerStateDto>();
@@ -107,21 +106,22 @@ public class GameHub : Hub<IGameClient>
         await Clients.Group(roomName).GameStarted(playerPositions, botPositions);
 
         foreach (var connectionId in room.Players)
+        {
             _frameStreamer.StartStreaming(connectionId);
+        }
 
         StartBotSpawningLoop(roomName);
     }
 
     public async Task StopGame(string roomName)
     {
-        _frameStreamer.StopStreaming();
-        StopBotSpawningLoop(roomName);
+        TryShutdownRoomIfEmpty(roomName);
     }
 
     public async Task Shoot()
     {
         var connectionId = Context.ConnectionId;
-        var roomName = RoomManager.GetRoomNameByConnection(connectionId);
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
         if (roomName == null) return;
 
         var now = DateTime.UtcNow;
@@ -139,13 +139,13 @@ public class GameHub : Hub<IGameClient>
                 X = position.X,
                 Y = position.Y,
                 VelocityX = 0,
-                VelocityY = -300 // TODO
+                VelocityY = -300
             };
 
-            var room = RoomManager.GetRoom(roomName);
+            var room = _roomManager.GetRoom(roomName);
             if (room != null)
             {
-                room.Bullets[bullet.Id] = bullet;
+                room.State.PlayerBullets[bullet.Id] = bullet;
             }
 
             await _frameStreamer.ProcessShot(connectionId, bullet);
@@ -166,41 +166,45 @@ public class GameHub : Hub<IGameClient>
     {
         lock (_botSpawnerLock)
         {
-            if (_botSpawners.ContainsKey(roomName)) return;
+            var room = _roomManager.GetRoom(roomName);
+            if (room == null || room.State.BotSpawners.ContainsKey(roomName)) return;
 
             var cts = new CancellationTokenSource();
-            _botSpawners[roomName] = cts;
+            room.State.BotSpawners[roomName] = cts;
             var token = cts.Token;
             var random = new Random();
 
             _ = Task.Run(async () =>
             {
-                while (!token.IsCancellationRequested)
+                try
                 {
-                    try
+                    while (!token.IsCancellationRequested)
                     {
+                        Console.WriteLine($"[BotSpawner Work]: Room {roomName}");
                         await Task.Delay(TimeSpan.FromSeconds(5), token);
 
                         var botId = Guid.NewGuid().ToString();
-                        var botPos = new Vector2(random.Next(50, 640 - 50), 0); //TODO
+                        var botPos = new Vector2(random.Next(50, 590), 0);
                         _frameStreamer.AddEnemyBot(botId, botPos, roomName);
 
-                        var room = RoomManager.GetRoom(roomName);
-                        if (room != null)
+                        var updatedRoom = _roomManager.GetRoom(roomName);
+                        if (updatedRoom != null)
                         {
-                            room.Bots[botId] = new PlayerStateDto { X = botPos.X, Y = botPos.Y };
-
+                            updatedRoom.State.Bots[botId] = new EnemyBot { Position = botPos };
                             await Clients.Group(roomName).ReceiveBotList(new Dictionary<string, PlayerStateDto>
                             {
                                 { botId, new PlayerStateDto { X = botPos.X, Y = botPos.Y } }
                             });
                         }
                     }
-                    catch (TaskCanceledException) { }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[BotSpawner Error]: {ex.Message}");
-                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    Console.WriteLine($"[BotSpawner Stopped]: Room {roomName}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BotSpawner Error]: {ex.Message}");
                 }
             }, token);
         }
@@ -210,11 +214,24 @@ public class GameHub : Hub<IGameClient>
     {
         lock (_botSpawnerLock)
         {
-            if (_botSpawners.TryGetValue(roomName, out var cts))
+            var room = _roomManager.GetRoom(roomName);
+            if (room != null && room.State.BotSpawners.TryGetValue(roomName, out var cts))
             {
                 cts.Cancel();
-                _botSpawners.Remove(roomName);
+                room.State.BotSpawners.Remove(roomName);
+                Console.WriteLine($"[BotSpawner Removed]: Room {roomName}");
             }
+        }
+    }
+
+    private void TryShutdownRoomIfEmpty(string roomName)
+    {
+        var players = _roomManager.GetPlayersInRoom(roomName);
+        if (players.Count == 0)
+        {
+            Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
+            _frameStreamer.StopStreaming();
+            StopBotSpawningLoop(roomName);
         }
     }
 }

@@ -29,6 +29,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IGameRepository, GameRepository>();
 builder.Services.AddSingleton<GameManager>();
 builder.Services.AddSingleton<FrameStreamer>();
+builder.Services.AddSingleton<RoomManager>();
 
 var app = builder.Build();
 
