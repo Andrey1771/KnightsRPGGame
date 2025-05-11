@@ -211,13 +211,13 @@ public class GameHub : Hub<IGameClient>
                         await Task.Delay(TimeSpan.FromSeconds(5), token);
 
                         var botId = Guid.NewGuid().ToString();
-                        var botPos = new Vector2(random.Next(50, 590), 0);
+                        var botPos = new Vector2(random.Next(50, 640 - 50), 0);
                         _frameStreamer.AddEnemyBot(botId, botPos, roomName);
 
                         var updatedRoom = _roomManager.GetRoom(roomName);
                         if (updatedRoom != null)
                         {
-                            updatedRoom.State.Bots[botId] = new EnemyBot { Position = botPos };
+                            updatedRoom.State.Bots[botId].Position = botPos;
                             await Clients.Group(roomName).ReceiveBotList(new Dictionary<string, PlayerStateDto>
                             {
                                 { botId, new PlayerStateDto { X = botPos.X, Y = botPos.Y } }

@@ -55,12 +55,13 @@ public class FrameStreamer
 
     public void RemovePlayer(string connectionId)
     {
+        //TODO Упростить
         var roomName = _roomManager.GetRoomNameByConnection(connectionId);
         if (roomName == null) return;
 
         var room = _roomManager.GetRoom(roomName);
         if (room == null) return;
-
+        
         room.State.Players.Remove(connectionId, out _);
         room.State.Actions.Remove(connectionId, out _);
     }
@@ -161,7 +162,7 @@ public class FrameStreamer
 
         moveVector = Vector2.Normalize(moveVector);
         var deltaTime = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
-        var speed = 200f;
+        var speed = 200f; //TODO Player Speed
         state.Players[connectionId].Position += moveVector * speed * deltaTime;
     }
 
@@ -208,14 +209,44 @@ public class FrameStreamer
     {
         foreach (var bullet in state.BotBullets.Values.ToList())
         {
-            bullet.X += bullet.VelocityX * deltaTime;
-            bullet.Y += bullet.VelocityY * deltaTime;
+            if (bullet == null)
+            {
+                Console.WriteLine("Found null bullet");
+                continue;
+            }
+
+            bullet.TimeAlive += deltaTime;
+
+            try
+            {
+                switch (bullet.Type)
+                {
+                    case BulletType.Straight:
+                        bullet.X += bullet.VelocityX * deltaTime;
+                        bullet.Y += bullet.VelocityY * deltaTime;
+                        break;
+
+                    case BulletType.ZigZag:
+                        bullet.X += (float)Math.Sin(bullet.TimeAlive * 10) * 30 * deltaTime;
+                        bullet.Y += bullet.VelocityY * deltaTime;
+                        break;
+
+                    case BulletType.Arc:
+                        bullet.X += bullet.VelocityX * deltaTime;
+                        bullet.Y += bullet.VelocityY * deltaTime + 0.5f * 50f * bullet.TimeAlive * deltaTime;
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Bullet error: {ex.Message} for bullet ID {bullet.Id}, Type {bullet.Type}");
+            }
 
             foreach (var (playerId, player) in state.Players)
             {
                 if (!IsHit(player.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
 
-                player.Health -= 1;
+                player.Health -= 1; //TODO Player Hit Damage
                 await _hubContext.Clients.Group(roomName).PlayerHit(playerId, player.Health);
                 if (player.Health <= 0)
                     await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
@@ -238,37 +269,102 @@ public class FrameStreamer
 
     private async Task BotsShootAtPlayers(GameRoom.RoomState state, string roomName)
     {
+        var now = DateTime.UtcNow;
+        var fireInterval = TimeSpan.FromSeconds(2); // Интервал между выстрелами
+
         foreach (var bot in state.Bots.Values)
         {
-            if (_rand.NextDouble() > 0.01) continue;
+            if (now - bot.LastShotTime < fireInterval)
+                continue;
 
-            var target = state.Players.Values.OrderBy(p => Vector2.Distance(p.Position, bot.Position)).FirstOrDefault();
+            bot.LastShotTime = now;
+
+            var target = state.Players.Values
+                .OrderBy(p => Vector2.Distance(p.Position, bot.Position))
+                .FirstOrDefault();
             if (target == null) continue;
 
-            var dir = Vector2.Normalize(target.Position - bot.Position) * 5f;
-
-            var bullet = new EnemyBulletDto
+            switch (bot.ShootingStyle)
             {
-                ShooterBotId = bot.BotId,
-                X = bot.Position.X,
-                Y = bot.Position.Y,
-                VelocityX = dir.X,
-                VelocityY = dir.Y
-            };
-
-            state.BotBullets[bullet.Id] = bullet;
-            await _hubContext.Clients.Group(roomName).SpawnEnemyBullet(bullet);
+                case 0:
+                    // Прямая стрельба
+                    await SpawnBotBullet(bot, target.Position - bot.Position, state, roomName);
+                    break;
+                case 1:
+                    // Веер: 3 пули под углами
+                    for (int i = -1; i <= 1; i++)
+                    {
+                        var angle = MathF.PI / 12 * i;
+                        var dir = Vector2.Normalize(target.Position - bot.Position);
+                        var rotated = RotateVector(dir, angle);
+                        await SpawnBotBullet(bot, rotated, state, roomName);
+                    }
+                    break;
+                case 2:
+                    // Рандомный вектор
+                    var randDir = Vector2.Normalize(new Vector2(_rand.Next(-100, 100), _rand.Next(-100, 100)));
+                    await SpawnBotBullet(bot, randDir, state, roomName);
+                    break;
+            }
         }
     }
+
+    private async Task SpawnBotBullet(EnemyBot bot, Vector2 direction, GameRoom.RoomState state, string roomName)
+    {
+        direction *= 0.002f; // скорость
+
+        var bulletType = bot.ShootingStyle switch
+        {
+            0 => BulletType.Straight,
+            1 => BulletType.ZigZag,
+            2 => BulletType.Arc,
+            _ => BulletType.Straight
+        };
+
+        var bullet = new EnemyBulletDto
+        {
+            ShooterBotId = bot.BotId,
+            X = bot.Position.X,
+            Y = bot.Position.Y,
+            VelocityX = direction.X,
+            VelocityY = direction.Y,
+            Type = bulletType,
+            TimeAlive = 0f
+        };
+
+        state.BotBullets[bullet.Id] = bullet;
+        await _hubContext.Clients.Group(roomName).SpawnEnemyBullet(bullet);
+    }
+
+    private Vector2 RotateVector(Vector2 v, float angle)
+    {
+        float cos = MathF.Cos(angle);
+        float sin = MathF.Sin(angle);
+        return new Vector2(v.X * cos - v.Y * sin, v.X * sin + v.Y * cos);
+    }
+
 
     private void UpdateEnemyBotPositions(GameRoom.RoomState state, string roomName)
     {
         var delta = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
 
-        var toRemove = state.Bots.Values
-            .Where(bot => (bot.Position += new Vector2(0, BotSpeed * delta)).Y > 1080)
-            .Select(bot => bot.BotId)
-            .ToList();
+        const float screenWidth = 1920; //TODO размеры игры
+        const float screenHeight = 1080;
+
+        var toRemove = new List<string>();
+
+        foreach (var bot in state.Bots.Values)
+        {
+            // Двигаем бота вниз (можно обновить для других направлений при необходимости)
+            bot.Position += new Vector2(0, BotSpeed * delta);
+
+            // Проверка выхода за границы экрана
+            if (bot.Position.X < 0 || bot.Position.X > screenWidth ||
+                bot.Position.Y < 0 || bot.Position.Y > screenHeight)
+            {
+                toRemove.Add(bot.BotId);
+            }
+        }
 
         foreach (var id in toRemove)
         {
@@ -304,7 +400,15 @@ public class FrameStreamer
         var room = _roomManager.GetRoom(roomName);
         if (room == null) return;
 
-        var bot = new EnemyBot { BotId = botId, Position = position };
+        var shootingStyle = _rand.Next(0, 3); // 0, 1, 2
+
+        var bot = new EnemyBot
+        {
+            BotId = botId,
+            Position = position,
+            ShootingStyle = shootingStyle
+        };
+
         room.State.Bots[botId] = bot;
     }
 
