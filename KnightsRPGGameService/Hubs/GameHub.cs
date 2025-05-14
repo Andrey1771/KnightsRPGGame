@@ -207,11 +207,17 @@ public class GameHub : Hub<IGameClient>
                 {
                     while (!token.IsCancellationRequested)
                     {
+
                         Console.WriteLine($"[BotSpawner Work]: Room {roomName}");
                         await Task.Delay(TimeSpan.FromSeconds(5), token);
 
+                        if (room.State.Bots.Count > 7 /*TODO ограничение на количество спавн ботов*/)
+                        {
+                            continue;
+                        }
+
                         var botId = Guid.NewGuid().ToString();
-                        var botPos = new Vector2(random.Next(50, 640 - 50), 0);
+                        var botPos = new Vector2(random.Next(50, 640 - 50/*TODO Размер Карты*/), 0);
                         _frameStreamer.AddEnemyBot(botId, botPos, roomName);
 
                         var updatedRoom = _roomManager.GetRoom(roomName);

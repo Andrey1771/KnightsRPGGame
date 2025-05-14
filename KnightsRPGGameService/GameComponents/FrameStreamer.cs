@@ -93,7 +93,7 @@ public class FrameStreamer
         if (_isStreaming) return;
         _isStreaming = true;
         _lastUpdateTime = DateTime.UtcNow;
-        _timer = new Timer(async _ => await UpdateFrame(), null, 0, 15);
+        _timer = new Timer(async _ => await UpdateFrame(), null, 0, 25);//TODO Частота обновления фрейма
     }
 
     public void StopStreaming()
@@ -401,5 +401,6 @@ public class FrameStreamer
         return dx * dx + dy * dy <= radius * radius;
     }
 
-    private static bool IsOutOfBounds(float x, float y) => x < 0 || x > 1920 || y < 0 || y > 1080;
+    /*TODO Размер Карты*/
+    private static bool IsOutOfBounds(float x, float y) => x < 0 || x > 640 || y < 0 || y > 960;
 }
