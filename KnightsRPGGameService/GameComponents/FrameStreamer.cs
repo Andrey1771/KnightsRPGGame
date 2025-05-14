@@ -219,23 +219,8 @@ public class FrameStreamer
 
             try
             {
-                switch (bullet.Type)
-                {
-                    case BulletType.Straight:
-                        bullet.X += bullet.VelocityX * deltaTime;
-                        bullet.Y += bullet.VelocityY * deltaTime;
-                        break;
-
-                    case BulletType.ZigZag:
-                        bullet.X += (float)Math.Sin(bullet.TimeAlive * 10) * 30 * deltaTime;
-                        bullet.Y += bullet.VelocityY * deltaTime;
-                        break;
-
-                    case BulletType.Arc:
-                        bullet.X += bullet.VelocityX * deltaTime;
-                        bullet.Y += bullet.VelocityY * deltaTime + 0.5f * 50f * bullet.TimeAlive * deltaTime;
-                        break;
-                }
+                bullet.X += bullet.VelocityX * deltaTime;
+                bullet.Y += bullet.VelocityY * deltaTime;
             }
             catch (Exception ex)
             {
@@ -288,15 +273,14 @@ public class FrameStreamer
             {
                 case 0:
                     // Прямая стрельба
-                    await SpawnBotBullet(bot, target.Position - bot.Position, state, roomName);
+                    await SpawnBotBullet(bot, (target.Position - bot.Position) * 0.002f, state, roomName);
                     break;
                 case 1:
-                    // Веер: 3 пули под углами
+                    var baseDir = Vector2.Normalize(target.Position - bot.Position);
                     for (int i = -1; i <= 1; i++)
                     {
                         var angle = MathF.PI / 12 * i;
-                        var dir = Vector2.Normalize(target.Position - bot.Position);
-                        var rotated = RotateVector(dir, angle);
+                        var rotated = RotateVector(baseDir, angle);
                         await SpawnBotBullet(bot, rotated, state, roomName);
                     }
                     break;
@@ -311,15 +295,13 @@ public class FrameStreamer
 
     private async Task SpawnBotBullet(EnemyBot bot, Vector2 direction, GameRoom.RoomState state, string roomName)
     {
-        direction *= 0.002f; // скорость
-
         var bulletType = bot.ShootingStyle switch
-        {
-            0 => BulletType.Straight,
-            1 => BulletType.ZigZag,
-            2 => BulletType.Arc,
-            _ => BulletType.Straight
-        };
+            {
+                0 => BulletType.Straight,
+                1 => BulletType.ZigZag,
+                2 => BulletType.Arc,
+                _ => BulletType.Straight
+            };
 
         var bullet = new EnemyBulletDto
         {
