@@ -9,13 +9,13 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs.Interfaces
         Task PlayerJoined(string connectionId);
         Task PlayerLeft(string connectionId);
         Task ReceivePlayerList(List<string> connectionIds);
-        Task GameStarted(Dictionary<string, PlayerStateDto> initialPositions, Dictionary<string, PlayerStateDto> bots);
+        Task GameStarted(Dictionary<string, PlayerStateDto> initialPositions, Dictionary<string, BotStateDto> bots);
         Task ReceivePlayerPosition(string connectionId, PlayerStateDto position);
 
         Task ReceiveBotHit(string botId, int health);
         Task BotDied(string botId);
         Task BulletFired(string connectionId, PlayerStateDto startPosition);
-        Task ReceiveBotList(Dictionary<string, PlayerStateDto> bots);
+        Task ReceiveBotList(Dictionary<string, BotStateDto> bots);
         Task SpawnBullet(BulletDto bullet);
         Task RemoveBullet(string bulletId);
         Task UpdateBullet(BulletDto bullet);
@@ -25,7 +25,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs.Interfaces
         Task RemoveEnemyBullet(string bulletId);
         Task PlayerHit(string connectionId, int newHealth);
         Task PlayerDied(string connectionId);
-        Task ReceiveBotPosition(string botId, PlayerStateDto playerPositionDto);
+        Task ReceiveBotPosition(string botId, BotStateDto playerPositionDto);
 
         Task UpdateScore(float score);
     }

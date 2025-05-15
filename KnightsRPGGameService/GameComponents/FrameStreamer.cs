@@ -359,11 +359,12 @@ public class FrameStreamer
     {
         foreach (var (id, bot) in state.Bots)
         {
-            await _hubContext.Clients.Group(roomName).ReceiveBotPosition(id, new PlayerStateDto
+            await _hubContext.Clients.Group(roomName).ReceiveBotPosition(id, new BotStateDto
             {
                 X = bot.Position.X,
                 Y = bot.Position.Y,
-                Health = bot.Health
+                Health = bot.Health,
+                ShootingStyle = bot.ShootingStyle
             });
         }
     }
