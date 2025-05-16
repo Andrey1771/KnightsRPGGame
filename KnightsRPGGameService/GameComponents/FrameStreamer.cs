@@ -162,8 +162,21 @@ public class FrameStreamer
 
         moveVector = Vector2.Normalize(moveVector);
         var deltaTime = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
-        var speed = 200f; //TODO Player Speed
-        state.Players[connectionId].Position += moveVector * speed * deltaTime;
+        var speed = 200f;
+
+        var player = state.Players[connectionId];
+        var newPosition = player.Position + moveVector * speed * deltaTime;
+
+        // TODO Ограничение по размерам карты
+        const float minX = 0f;
+        const float maxX = 640f;
+        const float minY = 0f;
+        const float maxY = 960f;
+
+        newPosition.X = Math.Clamp(newPosition.X, minX, maxX);
+        newPosition.Y = Math.Clamp(newPosition.Y, minY, maxY);
+
+        player.Position = newPosition;
     }
 
     private async Task UpdateBullets(float deltaTime, GameRoom.RoomState state, string roomName)
@@ -330,8 +343,8 @@ public class FrameStreamer
     {
         var delta = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
 
-        const float screenWidth = 1920; //TODO размеры игры
-        const float screenHeight = 1080;
+        const float screenWidth = 640; //TODO размеры игры
+        const float screenHeight = 960;
 
         var toRemove = new List<string>();
 
