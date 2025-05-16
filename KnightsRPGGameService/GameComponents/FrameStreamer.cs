@@ -282,6 +282,8 @@ public class FrameStreamer
                 .FirstOrDefault();
             if (target == null) continue;
 
+            var zeroVec = new Vector2(0, 0);
+
             switch (bot.ShootingStyle)
             {
                 case 0:
@@ -289,7 +291,9 @@ public class FrameStreamer
                     await SpawnBotBullet(bot, (target.Position - bot.Position) * 0.002f, state, roomName);
                     break;
                 case 1:
-                    var baseDir = Vector2.Normalize(target.Position - bot.Position);
+                    var resVec = target.Position - bot.Position;
+
+                    var baseDir = Vector2.Normalize(resVec == zeroVec ? zeroVec : Vector2.Normalize(resVec));
                     for (int i = -1; i <= 1; i++)
                     {
                         var angle = MathF.PI / 12 * i;
@@ -299,7 +303,8 @@ public class FrameStreamer
                     break;
                 case 2:
                     // Рандомный вектор
-                    var randDir = Vector2.Normalize(new Vector2(_rand.Next(-100, 100), _rand.Next(-100, 100)));
+                    var randPos = new Vector2(_rand.Next(-100, 100), _rand.Next(-100, 100));
+                    var randDir = randPos == zeroVec ? new Vector2(1, 0)/*Обрабатываем неопределенную ситуацию*/ : Vector2.Normalize(randPos);
                     await SpawnBotBullet(bot, randDir, state, roomName);
                     break;
             }
