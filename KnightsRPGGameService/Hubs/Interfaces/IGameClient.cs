@@ -28,5 +28,6 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs.Interfaces
         Task ReceiveBotPosition(string botId, BotStateDto playerPositionDto);
 
         Task UpdateScore(float score);
+        Task GameOver(float score);
     }
 }

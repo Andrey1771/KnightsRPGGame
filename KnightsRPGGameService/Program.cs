@@ -1,6 +1,7 @@
 using KnightsRPGGame.Service.GameAPI.GameComponents;
 using KnightsRPGGame.Service.GameAPI.Hubs;
 using KnightsRPGGame.Service.GameAPI.Repository;
+using MongoDB.Driver;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +31,10 @@ builder.Services.AddScoped<IGameRepository, GameRepository>();
 builder.Services.AddSingleton<GameManager>();
 builder.Services.AddSingleton<FrameStreamer>();
 builder.Services.AddSingleton<RoomManager>();
+
+builder.Services.AddSingleton<IGameResultRepository, GameResultRepository>();
+builder.Services.AddSingleton<IMongoClient>(sp =>
+    new MongoClient(builder.Configuration["ConnectionStrings:MongoDb"]));
 
 var app = builder.Build();
 

@@ -133,6 +133,18 @@ public class FrameStreamer
 
             state.Score += deltaSeconds;
             await _hubContext.Clients.Group(roomName).UpdateScore(state.Score);
+
+
+            bool allPlayersDead = state.Players.Values.All(p => p.Health <= 0);
+
+            if (allPlayersDead && !state.IsGameOver)
+            {
+                state.IsGameOver = true;
+
+                // Сообщаем всем клиентам о завершении игры
+                await _hubContext.Clients.Group(roomName).GameOver(state.Score);
+            }
+
         }
 
         _lastUpdateTime = DateTime.UtcNow;
@@ -295,7 +307,7 @@ public class FrameStreamer
 
                     var baseDir = Vector2.Normalize(resVec == zeroVec ? zeroVec : Vector2.Normalize(resVec));
                     for (int i = -1; i <= 1; i++)
-                    {
+                    { 
                         var angle = MathF.PI / 12 * i;
                         var rotated = RotateVector(baseDir, angle);
                         await SpawnBotBullet(bot, rotated, state, roomName);

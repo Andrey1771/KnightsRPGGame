@@ -1,6 +1,8 @@
 ﻿using KnightsRPGGame.Service.GameAPI.GameComponents;
 using KnightsRPGGame.Service.GameAPI.GameComponents.Entities;
+using KnightsRPGGame.Service.GameAPI.GameComponents.Entities.Mongo;
 using KnightsRPGGame.Service.GameAPI.Hubs.Interfaces;
+using KnightsRPGGame.Service.GameAPI.Repository;
 using Microsoft.AspNetCore.SignalR;
 using System.Numerics;
 
@@ -14,10 +16,13 @@ public class GameHub : Hub<IGameClient>
     private static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500);
     private readonly object _botSpawnerLock = new();
 
-    public GameHub(FrameStreamer frameStreamer, RoomManager roomManager)
+    private readonly IGameResultRepository _gameResultRepository;
+
+    public GameHub(FrameStreamer frameStreamer, RoomManager roomManager, IGameResultRepository gameResultRepository)
     {
         _frameStreamer = frameStreamer;
         _roomManager = roomManager;
+        _gameResultRepository = gameResultRepository;
     }
 
     public override async Task OnConnectedAsync() => await base.OnConnectedAsync();
@@ -187,6 +192,34 @@ public class GameHub : Hub<IGameClient>
             _frameStreamer.UpdatePlayerAction(Context.ConnectionId, parsedAction);
         }
         return Task.CompletedTask;
+    }
+
+    public async Task ReportDeath(string playerName)
+    {
+        if (string.IsNullOrWhiteSpace(playerName))
+            return;
+
+        var connectionId = Context.ConnectionId;
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
+        if (roomName == null) return;
+
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null) return;
+
+        var state = room.State;
+
+        if (state.Players.TryGetValue(connectionId, out var player))
+        {
+            var result = new GameResultDto
+            {
+                PlayerName = playerName,
+                Score = state.Score,
+                DatePlayed = DateTime.UtcNow
+            };
+
+            await _gameResultRepository.SaveResultAsync(result);
+            Console.WriteLine($"✔️ Сохранён результат: {playerName} — {state.Score}");
+        }
     }
 
     private void StartBotSpawningLoop(string roomName)

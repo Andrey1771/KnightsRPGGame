@@ -21,6 +21,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             public Dictionary<string, EnemyBulletDto> BotBullets { get; } = new();
             public float Score { get; set; } = 0;
             public bool IsGameStarted { get; set; } = false;
+            public bool IsGameOver { get; set; } = false;
 
             public readonly Dictionary<string, CancellationTokenSource> BotSpawners = new();//TODO
         }
