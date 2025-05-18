@@ -134,20 +134,49 @@ public class FrameStreamer
             state.Score += deltaSeconds;
             await _hubContext.Clients.Group(roomName).UpdateScore(state.Score);
 
-
+            // Проверка смерти всех игроков
             bool allPlayersDead = state.Players.Values.All(p => p.Health <= 0);
-
             if (allPlayersDead && !state.IsGameOver)
             {
                 state.IsGameOver = true;
 
-                // Сообщаем всем клиентам о завершении игры
                 await _hubContext.Clients.Group(roomName).GameOver(state.Score);
-            }
 
+                StopStreaming();
+                StopBotSpawningLoop(roomName);
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(10000);
+                    TryShutdownRoomIfEmpty(roomName);
+                    _roomManager.RemoveRoom(roomName);
+                });
+            }
         }
 
         _lastUpdateTime = DateTime.UtcNow;
+    }
+
+    private void StopBotSpawningLoop(string roomName) //TODO Убрать из GameHub?
+    {
+        var room = _roomManager.GetRoom(roomName);
+        if (room != null && room.State.BotSpawners.TryGetValue(roomName, out var cts))
+        {
+            cts.Cancel();
+            room.State.BotSpawners.Remove(roomName);
+            Console.WriteLine($"[BotSpawner Removed]: Room {roomName}");
+        }
+    }
+
+    private void TryShutdownRoomIfEmpty(string roomName) //TODO Убрать из GameHub?
+    {
+        var players = _roomManager.GetPlayersInRoom(roomName);
+        if (players.Count == 0)
+        {
+            Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
+            StopStreaming();
+            StopBotSpawningLoop(roomName);
+        }
     }
 
     private void UpdatePlayerMovement(GameRoom.RoomState state, string connectionId)
