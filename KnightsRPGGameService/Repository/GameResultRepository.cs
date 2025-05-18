@@ -9,7 +9,7 @@ namespace KnightsRPGGame.Service.GameAPI.Repository
 
         public GameResultRepository(IMongoClient client, IConfiguration config)
         {
-            var db = client.GetDatabase(config["MongoDb:Database"] ?? "Game");
+            var db = client.GetDatabase(config["ConnectionStrings:Name"]);
             _collection = db.GetCollection<GameResultDto>("results");
         }
 
