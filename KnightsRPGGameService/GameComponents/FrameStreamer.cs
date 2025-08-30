@@ -145,12 +145,12 @@ public class FrameStreamer
                 StopStreaming();
                 StopBotSpawningLoop(roomName);
 
-                _ = Task.Run(async () =>
+                /*_ = Task.Run(async () =>
                 {
                     await Task.Delay(10000);
                     TryShutdownRoomIfEmpty(roomName);
                     _roomManager.RemoveRoom(roomName);
-                });
+                });*/
             }
         }
 
@@ -173,7 +173,7 @@ public class FrameStreamer
         var players = _roomManager.GetPlayersInRoom(roomName);
         if (players.Count == 0)
         {
-            Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
+            Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services. 2222");
             StopStreaming();
             StopBotSpawningLoop(roomName);
         }
