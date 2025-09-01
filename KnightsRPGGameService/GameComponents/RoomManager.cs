@@ -9,6 +9,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public List<string> Players { get; set; } = new List<string>();
         public int MaxPlayers { get; set; } = 4;
         public bool IsFull => Players.Count >= MaxPlayers;
+        public string LeaderConnectionId { get; set; }
 
         public RoomState State { get; set; } = new RoomState();
 
@@ -34,16 +35,18 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
 
         public GameRoom? GetRoom(string roomName) => rooms.TryGetValue(roomName, out var room) ? room : null;
 
-        public bool CreateRoom(string roomName, int maxPlayers = 4)
+        public bool CreateRoom(string roomName, string connectionId, int maxPlayers = 4)
         {
             return rooms.TryAdd(roomName, new GameRoom
             {
                 RoomName = roomName,
-                MaxPlayers = maxPlayers
+                MaxPlayers = maxPlayers,
+                LeaderConnectionId = connectionId
+
             });
         }
 
-        public bool AddPlayerToRoom(string roomName, string connectionId)
+        public bool AddPlayerToRoom(string roomName, string connectionId, bool isLeader = false)
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
@@ -61,6 +64,14 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             if (rooms.TryGetValue(roomName, out var room))
             {
                 room.Players.Remove(connectionId);
+                if (room.LeaderConnectionId == connectionId)
+                {
+                    var playerConnectionId = room.Players.FirstOrDefault();
+                    if (playerConnectionId != null) // Если игроков не осталось, то комната будет удалена сразу
+                    {
+                        room.LeaderConnectionId = playerConnectionId;
+                    }
+                }
             }
         }
 

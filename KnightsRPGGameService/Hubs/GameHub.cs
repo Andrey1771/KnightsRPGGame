@@ -36,10 +36,12 @@ public class GameHub : Hub<IGameClient>
         {
             _roomManager.RemovePlayerFromRoom(roomName, Context.ConnectionId);
             await Clients.Group(roomName).PlayerLeft(Context.ConnectionId);
-            if (_roomManager.GetPlayersInRoom(roomName).Count == 0)
+            if (_roomManager.GetPlayersInRoom(roomName).Count == 0) // TODO Двойная проверка на то, что комната пуста
             {
                 TryShutdownRoomIfEmpty(roomName);
                 _roomManager.RemoveRoom(roomName);
+            } else {
+                await UpdatePlayerList(roomName);
             }
         }
 
@@ -48,7 +50,7 @@ public class GameHub : Hub<IGameClient>
 
     public async Task CreateRoom(string roomName, int maxPlayers = 4)
     {
-        if (!_roomManager.CreateRoom(roomName, maxPlayers))
+        if (!_roomManager.CreateRoom(roomName, Context.ConnectionId, maxPlayers))
         {
             await Clients.Caller.Error("Room already exists.");
             return;
@@ -94,6 +96,7 @@ public class GameHub : Hub<IGameClient>
             TryShutdownRoomIfEmpty(roomName);
             _roomManager.RemoveRoom(roomName);
         }
+
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName);
         await Clients.Group(roomName).PlayerLeft(Context.ConnectionId);
         await UpdatePlayerList(roomName);
@@ -101,8 +104,13 @@ public class GameHub : Hub<IGameClient>
 
     public async Task UpdatePlayerList(string roomName)
     {
-        var players = _roomManager.GetPlayersInRoom(roomName);
-        await Clients.Group(roomName).ReceivePlayerList(players);
+        var room = _roomManager.GetRoom(roomName);
+        
+        await Clients.Group(roomName).ReceivePlayerList(new PlayerInfoResponseDto
+        {
+            ConnectionIds = room?.Players,
+            LeaderConnectionId = room?.LeaderConnectionId
+        });
     }
 
     public Task<string> GetConnectionId() => Task.FromResult(Context.ConnectionId);

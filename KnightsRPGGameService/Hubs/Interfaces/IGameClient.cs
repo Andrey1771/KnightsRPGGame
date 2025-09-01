@@ -8,7 +8,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs.Interfaces
         Task Error(string message);
         Task PlayerJoined(string connectionId);
         Task PlayerLeft(string connectionId);
-        Task ReceivePlayerList(List<string> connectionIds);
+        Task ReceivePlayerList(PlayerInfoResponseDto dto);
         Task GameStarted(Dictionary<string, PlayerStateDto> initialPositions, Dictionary<string, BotStateDto> bots);
         Task ReceivePlayerPosition(string connectionId, PlayerStateDto position);
 
