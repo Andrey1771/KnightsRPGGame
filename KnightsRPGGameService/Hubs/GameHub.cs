@@ -229,6 +229,33 @@ public class GameHub : Hub<IGameClient>
         }
     }
 
+    public async Task ChangeLeader(string roomName, string newLeaderConnectionId)
+    {
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null)
+        {
+            await Clients.Caller.Error("Комната не найдена.");
+            return;
+        }
+
+        if (room.LeaderConnectionId != Context.ConnectionId)
+        {
+            await Clients.Caller.Error("Только текущий лидер может передавать лидерство.");
+            return;
+        }
+
+        if (!_roomManager.GetPlayersInRoom(roomName).Contains(newLeaderConnectionId))
+        {
+            await Clients.Caller.Error("Игрок не найден в комнате.");
+            return;
+        }
+
+        room.LeaderConnectionId = newLeaderConnectionId;
+        Console.WriteLine($"Лидер комнаты {roomName} сменён на {newLeaderConnectionId}");
+
+        await UpdatePlayerList(roomName);
+    }
+
     private void StartBotSpawningLoop(string roomName)
     {
         lock (_botSpawnerLock) //TODO ВОЗМОЖНО ЛИШНИЙ LOCK!!!
