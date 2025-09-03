@@ -83,7 +83,7 @@ public class GameHub : Hub<IGameClient>
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
-        await Clients.Group(roomName).PlayerJoined(Context.ConnectionId);
+        await Clients.Caller.PlayerJoined(Context.ConnectionId);
         await UpdatePlayerList(roomName);
     }
 
@@ -105,15 +105,13 @@ public class GameHub : Hub<IGameClient>
     public async Task UpdatePlayerList(string roomName)
     {
         var room = _roomManager.GetRoom(roomName);
-        
+
         await Clients.Group(roomName).ReceivePlayerList(new PlayerInfoResponseDto
         {
-            ConnectionIds = room?.Players,
+            ConnectionIds = _roomManager.GetPlayersInRoom(roomName),
             LeaderConnectionId = room?.LeaderConnectionId
         });
     }
-
-    public Task<string> GetConnectionId() => Task.FromResult(Context.ConnectionId);
 
     public async Task StartGame(string roomName)
     {
@@ -136,16 +134,17 @@ public class GameHub : Hub<IGameClient>
         var playerPositions = new Dictionary<string, PlayerStateDto>();
         var botPositions = new Dictionary<string, BotStateDto>();
 
-        foreach (var connectionId in room.Players)
+        var players = _roomManager.GetPlayersInRoom(roomName);
+        foreach (var connectionId in players)
         {
             var pos = new Vector2(0, 0);
             _frameStreamer.RegisterPlayer(connectionId, pos);
             playerPositions[connectionId] = new PlayerStateDto { X = pos.X, Y = pos.Y };
         }
-
+        Console.WriteLine($"StartGame {Context.ConnectionId}");
         await Clients.Group(roomName).GameStarted(playerPositions, botPositions);
 
-        foreach (var connectionId in room.Players)
+        foreach (var connectionId in players)
         {
             _frameStreamer.StartStreaming(connectionId);
         }
@@ -232,7 +231,7 @@ public class GameHub : Hub<IGameClient>
 
     private void StartBotSpawningLoop(string roomName)
     {
-        lock (_botSpawnerLock)
+        lock (_botSpawnerLock) //TODO ВОЗМОЖНО ЛИШНИЙ LOCK!!!
         {
             var room = _roomManager.GetRoom(roomName);
             if (room == null || room.State.BotSpawners.ContainsKey(roomName)) return;
@@ -287,15 +286,12 @@ public class GameHub : Hub<IGameClient>
 
     private void StopBotSpawningLoop(string roomName)
     {
-        lock (_botSpawnerLock)
+        var room = _roomManager.GetRoom(roomName);
+        if (room != null && room.State.BotSpawners.TryGetValue(roomName, out var cts))
         {
-            var room = _roomManager.GetRoom(roomName);
-            if (room != null && room.State.BotSpawners.TryGetValue(roomName, out var cts))
-            {
-                cts.Cancel();
-                room.State.BotSpawners.Remove(roomName);
-                Console.WriteLine($"[BotSpawner Removed]: Room {roomName}");
-            }
+            cts.Cancel();
+            room.State.BotSpawners.TryRemove(roomName, out _);
+            Console.WriteLine($"[BotSpawner Removed]: Room {roomName}");
         }
     }
 

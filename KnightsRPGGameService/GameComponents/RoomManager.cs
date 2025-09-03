@@ -6,7 +6,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
     public class GameRoom
     {
         public string RoomName { get; set; }
-        public List<string> Players { get; set; } = new List<string>();
+        public ConcurrentDictionary<string, byte> Players { get; set; } = new(); //TODO Дублирование, необходим рефакторинг
         public int MaxPlayers { get; set; } = 4;
         public bool IsFull => Players.Count >= MaxPlayers;
         public string LeaderConnectionId { get; set; }
@@ -18,13 +18,13 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             public ConcurrentDictionary<string, PlayerState> Players { get; } = new();
             public ConcurrentDictionary<string, EnemyBot> Bots { get; } = new();
             public ConcurrentDictionary<string, HashSet<PlayerAction>> Actions { get; } = new();
-            public Dictionary<string, BulletDto> PlayerBullets { get; } = new();
-            public Dictionary<string, EnemyBulletDto> BotBullets { get; } = new();
+            public ConcurrentDictionary<string, BulletDto> PlayerBullets { get; } = new();
+            public ConcurrentDictionary<string, EnemyBulletDto> BotBullets { get; } = new();
             public float Score { get; set; } = 0;
             public bool IsGameStarted { get; set; } = false;
             public bool IsGameOver { get; set; } = false;
 
-            public readonly Dictionary<string, CancellationTokenSource> BotSpawners = new();//TODO
+            public readonly ConcurrentDictionary<string, CancellationTokenSource> BotSpawners = new();//TODO
         }
     }
 
@@ -52,8 +52,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             {
                 if (!room.IsFull)
                 {
-                    room.Players.Add(connectionId);
-                    return true;
+                    return room.Players.TryAdd(connectionId, 0);
                 }
             }
             return false;
@@ -63,10 +62,10 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
-                room.Players.Remove(connectionId);
+                room.Players.TryRemove(connectionId, out _);
                 if (room.LeaderConnectionId == connectionId)
                 {
-                    var playerConnectionId = room.Players.FirstOrDefault();
+                    var playerConnectionId = room.Players.Keys.FirstOrDefault();
                     if (playerConnectionId != null) // Если игроков не осталось, то комната будет удалена сразу
                     {
                         room.LeaderConnectionId = playerConnectionId;
@@ -84,7 +83,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
-                return room.Players.ToList();
+                return room.Players.Keys.ToList(); // берём ключи (connectionId)
             }
             return new List<string>();
         }
@@ -98,7 +97,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         {
             foreach (var room in rooms)
             {
-                if (room.Value.Players.Contains(connectionId))
+                if (room.Value.Players.ContainsKey(connectionId))
                 {
                     return room.Key;
                 }

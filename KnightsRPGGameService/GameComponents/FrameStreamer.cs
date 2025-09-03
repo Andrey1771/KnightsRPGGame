@@ -61,9 +61,9 @@ public class FrameStreamer
 
         var room = _roomManager.GetRoom(roomName);
         if (room == null) return;
-        
-        room.State.Players.Remove(connectionId, out _);
-        room.State.Actions.Remove(connectionId, out _);
+
+        room.State.Players.TryRemove(connectionId, out _);
+        room.State.Actions.TryRemove(connectionId, out _);
     }
 
     public void UpdatePlayerAction(string connectionId, PlayerAction action)
@@ -163,17 +163,17 @@ public class FrameStreamer
         if (room != null && room.State.BotSpawners.TryGetValue(roomName, out var cts))
         {
             cts.Cancel();
-            room.State.BotSpawners.Remove(roomName);
+            room.State.BotSpawners.TryRemove(roomName, out _);
             Console.WriteLine($"[BotSpawner Removed]: Room {roomName}");
         }
     }
 
-    private void TryShutdownRoomIfEmpty(string roomName) //TODO Убрать из GameHub?
+    private void TryShutdownRoomIfEmpty(string roomName)
     {
         var players = _roomManager.GetPlayersInRoom(roomName);
         if (players.Count == 0)
         {
-            Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services. 2222");
+            Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
             StopStreaming();
             StopBotSpawningLoop(roomName);
         }
@@ -243,7 +243,7 @@ public class FrameStreamer
                     await _hubContext.Clients.Group(roomName).UpdateScore(state.Score);
                 }
 
-                state.PlayerBullets.Remove(bullet.Id);
+                state.PlayerBullets.TryRemove(bullet.Id, out _);
                 await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
                 break;
             }
@@ -252,7 +252,7 @@ public class FrameStreamer
 
             if (IsOutOfBounds(bullet.X, bullet.Y))
             {
-                state.PlayerBullets.Remove(bullet.Id);
+                state.PlayerBullets.TryRemove(bullet.Id, out _);
                 await _hubContext.Clients.Group(roomName).RemoveBullet(bullet.Id);
             }
             else await _hubContext.Clients.Group(roomName).UpdateBullet(bullet);
@@ -263,11 +263,7 @@ public class FrameStreamer
     {
         foreach (var bullet in state.BotBullets.Values.ToList())
         {
-            if (bullet == null)
-            {
-                Console.WriteLine("Found null bullet");
-                continue;
-            }
+            if (bullet == null) continue;
 
             bullet.TimeAlive += deltaTime;
 
@@ -290,7 +286,7 @@ public class FrameStreamer
                 if (player.Health <= 0)
                     await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
 
-                state.BotBullets.Remove(bullet.Id);
+                state.BotBullets.TryRemove(bullet.Id, out _);
                 await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
                 break;
             }
@@ -299,7 +295,7 @@ public class FrameStreamer
 
             if (IsOutOfBounds(bullet.X, bullet.Y))
             {
-                state.BotBullets.Remove(bullet.Id);
+                state.BotBullets.TryRemove(bullet.Id, out _);
                 await _hubContext.Clients.Group(roomName).RemoveEnemyBullet(bullet.Id);
             }
             else await _hubContext.Clients.Group(roomName).UpdateEnemyBullet(bullet);
@@ -313,8 +309,7 @@ public class FrameStreamer
 
         foreach (var bot in state.Bots.Values)
         {
-            if (now - bot.LastShotTime < fireInterval)
-                continue;
+            if (now - bot.LastShotTime < fireInterval) continue;
 
             bot.LastShotTime = now;
 
@@ -333,10 +328,9 @@ public class FrameStreamer
                     break;
                 case 1:
                     var resVec = target.Position - bot.Position;
-
                     var baseDir = Vector2.Normalize(resVec == zeroVec ? zeroVec : Vector2.Normalize(resVec));
                     for (int i = -1; i <= 1; i++)
-                    { 
+                    {
                         var angle = MathF.PI / 12 * i;
                         var rotated = RotateVector(baseDir, angle);
                         await SpawnBotBullet(bot, rotated, state, roomName);
@@ -345,7 +339,7 @@ public class FrameStreamer
                 case 2:
                     // Рандомный вектор
                     var randPos = new Vector2(_rand.Next(-100, 100), _rand.Next(-100, 100));
-                    var randDir = randPos == zeroVec ? new Vector2(1, 0)/*Обрабатываем неопределенную ситуацию*/ : Vector2.Normalize(randPos);
+                    var randDir = randPos == zeroVec ? new Vector2(1, 0) : Vector2.Normalize(randPos);
                     await SpawnBotBullet(bot, randDir, state, roomName);
                     break;
             }
@@ -355,12 +349,12 @@ public class FrameStreamer
     private async Task SpawnBotBullet(EnemyBot bot, Vector2 direction, GameRoom.RoomState state, string roomName)
     {
         var bulletType = bot.ShootingStyle switch
-            {
-                0 => BulletType.Straight,
-                1 => BulletType.ZigZag,
-                2 => BulletType.Arc,
-                _ => BulletType.Straight
-            };
+        {
+            0 => BulletType.Straight,
+            1 => BulletType.ZigZag,
+            2 => BulletType.Arc,
+            _ => BulletType.Straight
+        };
 
         var bullet = new EnemyBulletDto
         {
@@ -384,7 +378,6 @@ public class FrameStreamer
         return new Vector2(v.X * cos - v.Y * sin, v.X * sin + v.Y * cos);
     }
 
-
     private void UpdateEnemyBotPositions(GameRoom.RoomState state, string roomName)
     {
         var delta = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
@@ -396,7 +389,7 @@ public class FrameStreamer
 
         foreach (var bot in state.Bots.Values)
         {
-            // Двигаем бота вниз (можно обновить для других направлений при необходимости)
+            // Двигаем бота вниз
             bot.Position += new Vector2(0, BotSpeed * delta);
 
             // Проверка выхода за границы экрана
@@ -442,7 +435,7 @@ public class FrameStreamer
         var room = _roomManager.GetRoom(roomName);
         if (room == null) return;
 
-        var shootingStyle = _rand.Next(0, 3); // 0, 1, 2
+        var shootingStyle = _rand.Next(0, 3);
 
         var bot = new EnemyBot
         {
