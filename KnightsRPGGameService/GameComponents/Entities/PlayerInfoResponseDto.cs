@@ -2,7 +2,7 @@
 {
     public class PlayerInfoResponseDto
     {
-        public List<string> ConnectionIds { get; set; }
+        public List<PlayerInfo> PlayerInfos { get; set; }
         public string LeaderConnectionId { get; set; }
     }
 }

@@ -61,7 +61,7 @@ public class FrameStreamer
 
         var room = _roomManager.GetRoom(roomName);
         if (room == null) return;
-
+        
         room.State.Players.TryRemove(connectionId, out _);
         room.State.Actions.TryRemove(connectionId, out _);
     }

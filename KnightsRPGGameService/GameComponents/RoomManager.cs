@@ -6,7 +6,7 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
     public class GameRoom
     {
         public string RoomName { get; set; }
-        public ConcurrentDictionary<string, byte> Players { get; set; } = new(); //TODO Дублирование, необходим рефакторинг
+        public ConcurrentDictionary<string, PlayerInfo> Players { get; set; } = new(); //TODO Дублирование, необходим рефакторинг
         public int MaxPlayers { get; set; } = 4;
         public bool IsFull => Players.Count >= MaxPlayers;
         public string LeaderConnectionId { get; set; }
@@ -46,13 +46,16 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             });
         }
 
-        public bool AddPlayerToRoom(string roomName, string connectionId, bool isLeader = false)
+        public bool AddPlayerToRoom(string roomName, string connectionId, string playerName)
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
                 if (!room.IsFull)
                 {
-                    return room.Players.TryAdd(connectionId, 0);
+                    return room.Players.TryAdd(connectionId, new PlayerInfo
+                    {
+                        Name = playerName
+                    });
                 }
             }
             return false;
@@ -79,13 +82,17 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             rooms.TryRemove(roomName, out _);
         }
 
-        public List<string> GetPlayersInRoom(string roomName)
+        public List<PlayerInfo> GetPlayersInRoom(string roomName)
         {
             if (rooms.TryGetValue(roomName, out var room))
             {
-                return room.Players.Keys.ToList(); // берём ключи (connectionId)
+                return room.Players.Select(p => new PlayerInfo
+                {
+                    ConnectionId = p.Key,
+                    Name = p.Value.Name
+                }).ToList();
             }
-            return new List<string>();
+            return new List<PlayerInfo>();
         }
 
         public IEnumerable<GameRoom> GetAllRooms()

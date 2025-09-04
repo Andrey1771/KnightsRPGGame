@@ -48,7 +48,7 @@ public class GameHub : Hub<IGameClient>
         await base.OnDisconnectedAsync(exception);
     }
 
-    public async Task CreateRoom(string roomName, int maxPlayers = 4)
+    public async Task CreateRoom(string roomName, string playerName, int maxPlayers = 4)
     {
         if (!_roomManager.CreateRoom(roomName, Context.ConnectionId, maxPlayers))
         {
@@ -56,12 +56,12 @@ public class GameHub : Hub<IGameClient>
             return;
         }
 
-        _roomManager.AddPlayerToRoom(roomName, Context.ConnectionId);
+        _roomManager.AddPlayerToRoom(roomName, Context.ConnectionId, playerName);
         await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
         await Clients.Caller.RoomCreated(roomName);
     }
 
-    public async Task JoinRoom(string roomName)
+    public async Task JoinRoom(string roomName, string playerName)
     {
         var room = _roomManager.GetRoom(roomName);
         if (room == null)
@@ -76,7 +76,7 @@ public class GameHub : Hub<IGameClient>
             return;
         }
 
-        if (!_roomManager.AddPlayerToRoom(roomName, Context.ConnectionId))
+        if (!_roomManager.AddPlayerToRoom(roomName, Context.ConnectionId, playerName))
         {
             await Clients.Caller.Error("Failed to join room (room full or already joined).");
             return;
@@ -108,7 +108,7 @@ public class GameHub : Hub<IGameClient>
 
         await Clients.Group(roomName).ReceivePlayerList(new PlayerInfoResponseDto
         {
-            ConnectionIds = _roomManager.GetPlayersInRoom(roomName),
+            PlayerInfos = _roomManager.GetPlayersInRoom(roomName),
             LeaderConnectionId = room?.LeaderConnectionId
         });
     }
@@ -135,18 +135,18 @@ public class GameHub : Hub<IGameClient>
         var botPositions = new Dictionary<string, BotStateDto>();
 
         var players = _roomManager.GetPlayersInRoom(roomName);
-        foreach (var connectionId in players)
+        foreach (var player in players)
         {
             var pos = new Vector2(0, 0);
-            _frameStreamer.RegisterPlayer(connectionId, pos);
-            playerPositions[connectionId] = new PlayerStateDto { X = pos.X, Y = pos.Y };
+            _frameStreamer.RegisterPlayer(player.ConnectionId, pos);
+            playerPositions[player.ConnectionId] = new PlayerStateDto { X = pos.X, Y = pos.Y };
         }
         Console.WriteLine($"StartGame {Context.ConnectionId}");
         await Clients.Group(roomName).GameStarted(playerPositions, botPositions);
 
-        foreach (var connectionId in players)
+        foreach (var player in players)
         {
-            _frameStreamer.StartStreaming(connectionId);
+            _frameStreamer.StartStreaming(player.ConnectionId);
         }
 
         StartBotSpawningLoop(roomName);
@@ -244,7 +244,7 @@ public class GameHub : Hub<IGameClient>
             return;
         }
 
-        if (!_roomManager.GetPlayersInRoom(roomName).Contains(newLeaderConnectionId))
+        if (!_roomManager.GetPlayersInRoom(roomName).Any(p => p.ConnectionId == newLeaderConnectionId))
         {
             await Clients.Caller.Error("Игрок не найден в комнате.");
             return;
