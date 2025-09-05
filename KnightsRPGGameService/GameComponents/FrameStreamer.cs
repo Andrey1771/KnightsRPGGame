@@ -107,6 +107,9 @@ public class FrameStreamer
     {
         foreach (var room in _roomManager.GetAllRooms())
         {
+            if (!room.State.IsGameStarted || room.State.IsPaused)
+                continue;
+
             var roomName = room.RoomName;
             var state = room.State;
 

@@ -1,4 +1,5 @@
 ﻿using KnightsRPGGame.Service.GameAPI.GameComponents.Entities;
+using System;
 
 namespace KnightsRPGGame.Service.GameAPI.Hubs.Interfaces
 {
@@ -10,6 +11,7 @@ namespace KnightsRPGGame.Service.GameAPI.Hubs.Interfaces
         Task PlayerLeft(string connectionId);
         Task ReceivePlayerList(PlayerInfoResponseDto dto);
         Task GameStarted(Dictionary<string, PlayerStateDto> initialPositions, Dictionary<string, BotStateDto> bots);
+        Task GamePaused(bool isPaused);
         Task ReceivePlayerPosition(string connectionId, PlayerStateDto position);
 
         Task ReceiveBotHit(string botId, int health);

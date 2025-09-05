@@ -102,6 +102,28 @@ public class GameHub : Hub<IGameClient>
         await UpdatePlayerList(roomName);
     }
 
+    public async Task TogglePause(string roomName)
+    {
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null)
+        {
+            await Clients.Caller.Error("Комната не найдена.");
+            return;
+        }
+
+        if (room.LeaderConnectionId != Context.ConnectionId)
+        {
+            await Clients.Caller.Error("Только лидер комнаты может ставить паузу.");
+            return;
+        }
+
+        room.State.IsPaused = !room.State.IsPaused;
+
+        await Clients.Group(roomName).GamePaused(room.State.IsPaused);
+
+        Console.WriteLine($"[GameHub] Room '{roomName}' paused: {room.State.IsPaused}");
+    }
+
     public async Task UpdatePlayerList(string roomName)
     {
         var room = _roomManager.GetRoom(roomName);
@@ -160,8 +182,23 @@ public class GameHub : Hub<IGameClient>
     public async Task Shoot()
     {
         var connectionId = Context.ConnectionId;
-        var roomName = _roomManager.GetRoomNameByConnection(connectionId);
-        if (roomName == null) return;
+
+        var roomName = _roomManager.GetRoomNameByConnection(connectionId); // TODO Упростить
+        if (roomName == null)
+        {
+            await Clients.Caller.Error("Имя комнаты не найдено.");
+            return;
+        }
+
+        var room = _roomManager.GetRoom(roomName); // TODO Вместо 2 методов 2 перегрузка
+        if (room == null)
+        {
+            await Clients.Caller.Error("Комната не найдена.");
+            return;
+        }
+
+        if (!room.State.IsGameStarted || room.State.IsPaused)
+            return;
 
         var now = DateTime.UtcNow;
 
@@ -181,11 +218,7 @@ public class GameHub : Hub<IGameClient>
                 VelocityY = -300
             };
 
-            var room = _roomManager.GetRoom(roomName);
-            if (room != null)
-            {
-                room.State.PlayerBullets[bullet.Id] = bullet;
-            }
+            room.State.PlayerBullets[bullet.Id] = bullet;
 
             await _frameStreamer.ProcessShot(connectionId, bullet);
             await Clients.Group(roomName).SpawnBullet(bullet);

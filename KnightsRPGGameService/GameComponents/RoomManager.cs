@@ -24,6 +24,8 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             public bool IsGameStarted { get; set; } = false;
             public bool IsGameOver { get; set; } = false;
 
+            public bool IsPaused { get; set; } = false;
+
             public readonly ConcurrentDictionary<string, CancellationTokenSource> BotSpawners = new();//TODO
         }
     }
