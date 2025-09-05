@@ -178,13 +178,9 @@ public class FrameStreamer
             var spawnInterval = TimeSpan.FromSeconds(5);
             if (now - state.LastBotSpawnTime >= spawnInterval && state.Bots.Count < 8)
             {
-                
-
-                
-
                 var botId = Guid.NewGuid().ToString();
                 var botPos = new Vector2(_rand.Next(50, 640 - 50), 0);
-                Console.WriteLine($"SPAWN BOT {now}|||{state.LastBotSpawnTime}|||{spawnInterval} {botId} {room.RoomName}");
+                Console.WriteLine($"SPAWN BOT {now}||{state.LastBotSpawnTime}||{spawnInterval} {botId} {room.RoomName}");
                 state.LastBotSpawnTime = now;
                 AddEnemyBot(botId, botPos, room.RoomName);
 
