@@ -2,7 +2,6 @@
 using KnightsRPGGame.Service.GameAPI.Hubs;
 using KnightsRPGGame.Service.GameAPI.Hubs.Interfaces;
 using Microsoft.AspNetCore.SignalR;
-using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace KnightsRPGGame.Service.GameAPI.GameComponents;
@@ -18,7 +17,6 @@ public class FrameStreamer
 
     private Timer? _timer;
     private bool _isStreaming;
-    private DateTime _lastUpdateTime = DateTime.UtcNow;
 
     public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext, RoomManager roomManager)
     {
@@ -88,76 +86,117 @@ public class FrameStreamer
         }
     }
 
-    public async Task StartStreaming(string connectionId)
+    public void PauseRoom(GameRoom room)
     {
-        if (_isStreaming) return;
-        _isStreaming = true;
-        _lastUpdateTime = DateTime.UtcNow;
-        _timer = new Timer(async _ => await UpdateFrame(), null, 0, 25);//TODO Частота обновления фрейма
+        if (!room.State.IsPaused)
+        {
+            room.State.IsPaused = true;
+            room.State.PauseStartTime = DateTime.UtcNow;
+        }
     }
 
-    public void StopStreaming()
+    public void ResumeRoom(GameRoom room)
+    {
+        if (room.State.IsPaused)
+        {
+            room.State.IsPaused = false;
+            if (room.State.PauseStartTime.HasValue)
+            {
+                var pausedDuration = DateTime.UtcNow - room.State.PauseStartTime.Value;
+                room.State.LastUpdateTime += pausedDuration;
+                room.State.LastBotSpawnTime += pausedDuration;
+                room.State.PauseStartTime = null;
+            }
+        }
+    }
+
+
+
+    public async Task StartStreamingForRoom(string roomName)
+    {
+        if (_isStreaming) return;
+
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null) return;
+
+        _isStreaming = true;
+        room.State.LastUpdateTime = DateTime.UtcNow;
+
+        _timer = new Timer(async _ =>
+        {
+            await UpdateFrameForRoom(room);
+        }, null, 0, 25); // ~40 FPS
+    }
+
+    public void StopStreamingForRoom()
     {
         _timer?.Dispose();
         _timer = null;
         _isStreaming = false;
     }
 
-    private async Task UpdateFrame()
+    private async Task UpdateFrameForRoom(GameRoom room)
     {
-        foreach (var room in _roomManager.GetAllRooms())
+        var state = room.State;
+
+        if (state.IsPaused || state.IsGameOver)
         {
-            if (!room.State.IsGameStarted || room.State.IsPaused)
-                continue;
+            return; // ничего не апдейтим
+        }
 
-            var roomName = room.RoomName;
-            var state = room.State;
+        var now = DateTime.UtcNow;
+        var deltaSeconds = (float)(now - state.LastUpdateTime).TotalSeconds;
 
-            var currentTime = DateTime.UtcNow;
-            var deltaSeconds = (float)(currentTime - _lastUpdateTime).TotalSeconds;
+        // --- Обновляем игроков ---
+        foreach (var (connectionId, playerState) in state.Players)
+        {
+            UpdatePlayerMovement(state, connectionId);
 
-            foreach (var (connectionId, playerState) in state.Players)
+            await _hubContext.Clients.Group(room.RoomName).ReceivePlayerPosition(connectionId, new PlayerStateDto
             {
-                UpdatePlayerMovement(state, connectionId);
+                X = playerState.Position.X,
+                Y = playerState.Position.Y,
+                Health = playerState.Health
+            });
+        }
 
-                await _hubContext.Clients.Group(roomName).ReceivePlayerPosition(connectionId, new PlayerStateDto
-                {
-                    X = playerState.Position.X,
-                    Y = playerState.Position.Y,
-                    Health = playerState.Health
-                });
-            }
+        await UpdateBullets(deltaSeconds, state, room.RoomName);
+        await UpdateEnemyBullets(deltaSeconds, state, room.RoomName);
+        await BotsShootAtPlayers(state, room.RoomName);
+        UpdateEnemyBotPositions(state, room.RoomName);
+        await BroadcastEnemyBots(state, room.RoomName);
 
-            await UpdateBullets(0.015f, state, roomName);
-            await UpdateEnemyBullets(1f, state, roomName);
-            await BotsShootAtPlayers(state, roomName);
-            UpdateEnemyBotPositions(state, roomName);
-            await BroadcastEnemyBots(state, roomName);
+        state.Score += deltaSeconds;
+        await _hubContext.Clients.Group(room.RoomName).UpdateScore(state.Score);
 
-            state.Score += deltaSeconds;
-            await _hubContext.Clients.Group(roomName).UpdateScore(state.Score);
+        bool allPlayersDead = state.Players.Values.All(p => p.Health <= 0);
+        if (allPlayersDead)
+        {
+            state.IsGameOver = true;
+            await _hubContext.Clients.Group(room.RoomName).GameOver(state.Score);
+            StopStreamingForRoom();
+        }
 
-            // Проверка смерти всех игроков
-            bool allPlayersDead = state.Players.Values.All(p => p.Health <= 0);
-            if (allPlayersDead && !state.IsGameOver)
+        // --- Спавн ботов ---
+        if (state.IsGameStarted)
+        {
+            var spawnInterval = TimeSpan.FromSeconds(5);
+            if (now - state.LastBotSpawnTime >= spawnInterval && state.Bots.Count < 8)
             {
-                state.IsGameOver = true;
+                state.LastBotSpawnTime = now;
 
-                await _hubContext.Clients.Group(roomName).GameOver(state.Score);
+                var botId = Guid.NewGuid().ToString();
+                var botPos = new Vector2(new Random().Next(50, 640 - 50), 0);
+                AddEnemyBot(botId, botPos, room.RoomName);
 
-                StopStreaming();
-                StopBotSpawningLoop(roomName);
-
-                /*_ = Task.Run(async () =>
-                {
-                    await Task.Delay(10000);
-                    TryShutdownRoomIfEmpty(roomName);
-                    _roomManager.RemoveRoom(roomName);
-                });*/
+                await _hubContext.Clients.Group(room.RoomName).ReceiveBotList(new Dictionary<string, BotStateDto>
+            {
+                { botId, new BotStateDto { X = botPos.X, Y = botPos.Y, ShootingStyle = state.Bots[botId].ShootingStyle } }
+            });
             }
         }
 
-        _lastUpdateTime = DateTime.UtcNow;
+        state.LastUpdateTime = now;
     }
 
     private void StopBotSpawningLoop(string roomName) //TODO Убрать из GameHub?
@@ -177,7 +216,7 @@ public class FrameStreamer
         if (players.Count == 0)
         {
             Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
-            StopStreaming();
+            StopStreamingForRoom();
             StopBotSpawningLoop(roomName);
         }
     }
@@ -205,7 +244,7 @@ public class FrameStreamer
         if (moveVector == Vector2.Zero) return;
 
         moveVector = Vector2.Normalize(moveVector);
-        var deltaTime = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
+        var deltaTime = (float)(DateTime.UtcNow - state.LastUpdateTime).TotalSeconds;
         var speed = 200f;
 
         var player = state.Players[connectionId];
@@ -364,8 +403,8 @@ public class FrameStreamer
             ShooterBotId = bot.BotId,
             X = bot.Position.X,
             Y = bot.Position.Y,
-            VelocityX = direction.X,
-            VelocityY = direction.Y,
+            VelocityX = direction.X * 20,
+            VelocityY = direction.Y * 20,
             Type = bulletType,
             TimeAlive = 0f
         };
@@ -383,7 +422,7 @@ public class FrameStreamer
 
     private void UpdateEnemyBotPositions(GameRoom.RoomState state, string roomName)
     {
-        var delta = (float)(DateTime.UtcNow - _lastUpdateTime).TotalSeconds;
+        var delta = (float)(DateTime.UtcNow - state.LastUpdateTime).TotalSeconds;
 
         const float screenWidth = 640; //TODO размеры игры
         const float screenHeight = 960;
