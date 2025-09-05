@@ -15,17 +15,11 @@ public class FrameStreamer
     private readonly RoomManager _roomManager;
     private readonly Random _rand = new();
 
-    private Timer? _timer;
-    private bool _isStreaming;
-
     public FrameStreamer(IHubContext<GameHub, IGameClient> hubContext, RoomManager roomManager)
     {
         _hubContext = hubContext;
         _roomManager = roomManager;
     }
-
-    public bool HasPlayer() =>
-        _roomManager.GetAllRooms().Any(room => room.State.Players.Any());
 
     public bool TryGetPlayerPosition(string connectionId, out PlayerStateDto position)
     {
@@ -110,36 +104,37 @@ public class FrameStreamer
         }
     }
 
-
-
     public async Task StartStreamingForRoom(string roomName)
     {
-        if (_isStreaming) return;
-
         var room = _roomManager.GetRoom(roomName);
-        if (room == null) return;
+        if (room == null || room.State.IsStreaming) return;
 
-        _isStreaming = true;
+        room.State.IsStreaming = true;
         room.State.LastUpdateTime = DateTime.UtcNow;
+        room.State.LastBotSpawnTime = DateTime.UtcNow;
+        room.State.PauseStartTime = null;
 
-        _timer = new Timer(async _ =>
+        room.State.FrameTimer = new Timer(async _ =>
         {
             await UpdateFrameForRoom(room);
         }, null, 0, 25); // ~40 FPS
     }
 
-    public void StopStreamingForRoom()
+    public void StopStreamingForRoom(string roomName)
     {
-        _timer?.Dispose();
-        _timer = null;
-        _isStreaming = false;
+        var room = _roomManager.GetRoom(roomName);
+        if (room == null) return;
+
+        room.State.FrameTimer?.Dispose();
+        room.State.FrameTimer = null;
+        room.State.IsStreaming = false;
     }
 
     private async Task UpdateFrameForRoom(GameRoom room)
     {
         var state = room.State;
 
-        if (state.IsPaused || state.IsGameOver)
+        if (!state.IsStreaming || state.IsPaused || state.IsGameOver)
         {
             return; // ничего не апдейтим
         }
@@ -174,7 +169,7 @@ public class FrameStreamer
         {
             state.IsGameOver = true;
             await _hubContext.Clients.Group(room.RoomName).GameOver(state.Score);
-            StopStreamingForRoom();
+            StopStreamingForRoom(room.RoomName);
         }
 
         // --- Спавн ботов ---
@@ -183,10 +178,14 @@ public class FrameStreamer
             var spawnInterval = TimeSpan.FromSeconds(5);
             if (now - state.LastBotSpawnTime >= spawnInterval && state.Bots.Count < 8)
             {
-                state.LastBotSpawnTime = now;
+                
+
+                
 
                 var botId = Guid.NewGuid().ToString();
-                var botPos = new Vector2(new Random().Next(50, 640 - 50), 0);
+                var botPos = new Vector2(_rand.Next(50, 640 - 50), 0);
+                Console.WriteLine($"SPAWN BOT {now}|||{state.LastBotSpawnTime}|||{spawnInterval} {botId} {room.RoomName}");
+                state.LastBotSpawnTime = now;
                 AddEnemyBot(botId, botPos, room.RoomName);
 
                 await _hubContext.Clients.Group(room.RoomName).ReceiveBotList(new Dictionary<string, BotStateDto>
@@ -216,8 +215,7 @@ public class FrameStreamer
         if (players.Count == 0)
         {
             Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
-            StopStreamingForRoom();
-            StopBotSpawningLoop(roomName);
+            StopStreamingForRoom(roomName);
         }
     }
 

@@ -25,9 +25,12 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
             public bool IsGameOver { get; set; } = false;
 
             public bool IsPaused { get; set; } = false;
-            public DateTime LastBotSpawnTime { get; set; } = DateTime.UtcNow;
-            public DateTime LastUpdateTime = new();
+            public DateTime LastBotSpawnTime { get; set; }
+            public DateTime LastUpdateTime { get; set; }
             public DateTime? PauseStartTime { get; set; } = null;
+
+            public Timer? FrameTimer { get; set; }
+            public bool IsStreaming { get; set; } = false;
 
 
             public readonly ConcurrentDictionary<string, CancellationTokenSource> BotSpawners = new();//TODO

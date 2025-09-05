@@ -170,13 +170,10 @@ public class GameHub : Hub<IGameClient>
             playerPositions[player.ConnectionId] = new PlayerStateDto { X = pos.X, Y = pos.Y };
         }
         Console.WriteLine($"StartGame {Context.ConnectionId}");
+
+        _frameStreamer.StartStreamingForRoom(roomName);
+
         await Clients.Group(roomName).GameStarted(playerPositions, botPositions);
-
-        foreach (var player in players)
-        {
-            _frameStreamer.StartStreamingForRoom(roomName);
-        }
-
     }
 
     public async Task StopGame(string roomName)
@@ -263,7 +260,7 @@ public class GameHub : Hub<IGameClient>
             };
 
             await _gameResultRepository.SaveResultAsync(result);
-            Console.WriteLine($"✔️ Сохранён результат: {playerName} — {state.Score}");
+            Console.WriteLine($"Сохранён результат: {playerName} — {state.Score}");
         }
     }
 
@@ -300,7 +297,7 @@ public class GameHub : Hub<IGameClient>
         if (players.Count == 0)
         {
             Console.WriteLine($"[Room Shutdown]: No players left in room '{roomName}', stopping services.");
-            _frameStreamer.StopStreamingForRoom();
+            _frameStreamer.StopStreamingForRoom(roomName);
         }
     }
 }
