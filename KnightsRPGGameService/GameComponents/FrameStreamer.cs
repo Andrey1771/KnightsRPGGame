@@ -99,6 +99,15 @@ public class FrameStreamer
                 var pausedDuration = DateTime.UtcNow - room.State.PauseStartTime.Value;
                 room.State.LastUpdateTime += pausedDuration;
                 room.State.LastBotSpawnTime += pausedDuration;
+                foreach (var bot in room.State.Bots.Values)
+                {
+                    bot.LastShotTime += pausedDuration;
+                }
+                foreach (var player in room.State.Players.Values)
+                {
+                    player.LastShotTime += pausedDuration;
+                }
+
                 room.State.PauseStartTime = null;
             }
         }

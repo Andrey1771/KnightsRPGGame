@@ -12,9 +12,6 @@ public class GameHub : Hub<IGameClient>
 {
     private readonly FrameStreamer _frameStreamer;
     private readonly RoomManager _roomManager;
-    private static readonly Dictionary<string, DateTime> _lastShotTime = new();
-    private static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500);
-    private readonly object _botSpawnerLock = new();
 
     private readonly IGameResultRepository _gameResultRepository;
 
@@ -202,12 +199,11 @@ public class GameHub : Hub<IGameClient>
         if (!room.State.IsGameStarted || room.State.IsPaused)
             return;
 
-        var now = DateTime.UtcNow;
-
-        if (_lastShotTime.TryGetValue(connectionId, out var lastShot) && now - lastShot < ShotCooldown)
+        var player = room.State.Players[connectionId];
+        if (DateTime.UtcNow - player.LastShotTime < PlayerState.ShotCooldown)
             return;
 
-        _lastShotTime[connectionId] = now;
+        player.LastShotTime = DateTime.UtcNow;
 
         if (_frameStreamer.TryGetPlayerPosition(connectionId, out var position))
         {

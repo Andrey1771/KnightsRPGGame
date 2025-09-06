@@ -8,5 +8,9 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents.Entities
         public Vector2 Position { get; set; }
         public int Health { get; set; } = 1;//100;
         public int Score { get; set; } = 0;
+
+        public DateTime LastShotTime { get; set; } = DateTime.MinValue;
+
+        public static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500); // TODO перенести в место правил игры
     }
 }
