@@ -213,7 +213,7 @@ public class GameHub : Hub<IGameClient>
                 X = position.X,
                 Y = position.Y,
                 VelocityX = 0,
-                VelocityY = -300
+                VelocityY = -300 // TODO Перенести в правила игры
             };
 
             room.State.PlayerBullets[bullet.Id] = bullet;
