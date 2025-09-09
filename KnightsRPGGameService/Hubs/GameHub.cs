@@ -212,8 +212,8 @@ public class GameHub : Hub<IGameClient>
                 OwnerId = connectionId,
                 X = position.X,
                 Y = position.Y,
-                VelocityX = 0,
-                VelocityY = -300 // TODO Перенести в правила игры
+                VelocityX = BulletDto.PlayerVelocityX,
+                VelocityY = BulletDto.PlayerVelocityY
             };
 
             room.State.PlayerBullets[bullet.Id] = bullet;
