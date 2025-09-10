@@ -12,5 +12,6 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents.Entities
         public DateTime LastShotTime { get; set; } = DateTime.MinValue;
 
         public static readonly TimeSpan ShotCooldown = TimeSpan.FromMilliseconds(500); // TODO перенести в место правил игры
+        public static readonly int PlayerHitDamage = 1; // TODO перенести в место правил игры
     }
 }

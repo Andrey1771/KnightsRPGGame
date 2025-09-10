@@ -326,7 +326,7 @@ public class FrameStreamer
             {
                 if (!IsHit(player.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
 
-                player.Health -= 1; //TODO Player Hit Damage
+                player.Health -= PlayerState.PlayerHitDamage; //TODO Player Hit Damage
                 await _hubContext.Clients.Group(roomName).PlayerHit(playerId, player.Health);
                 if (player.Health <= 0)
                     await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
