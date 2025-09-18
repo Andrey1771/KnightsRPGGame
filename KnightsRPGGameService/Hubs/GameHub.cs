@@ -138,6 +138,17 @@ public class GameHub : Hub<IGameClient>
         });
     }
 
+    public async Task GetPlayerList(string roomName)
+    {
+        var room = _roomManager.GetRoom(roomName);
+
+        await Clients.Caller.ReceivePlayerList(new PlayerInfoResponseDto
+        {
+            PlayerInfos = _roomManager.GetPlayersInRoom(roomName),
+            LeaderConnectionId = room?.LeaderConnectionId
+        });
+    }
+
     public async Task StartGame(string roomName)
     {
         var room = _roomManager.GetRoom(roomName);
