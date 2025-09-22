@@ -104,13 +104,13 @@ public class GameHub : Hub<IGameClient>
         var room = _roomManager.GetRoom(roomName);
         if (room == null)
         {
-            await Clients.Caller.Error("Комната не найдена.");
+            await Clients.Caller.Error("Room not found.");
             return;
         }
 
         if (room.LeaderConnectionId != Context.ConnectionId)
         {
-            await Clients.Caller.Error("Только лидер комнаты может ставить паузу.");
+            await Clients.Caller.Error("Only the room leader can pause.");
             return;
         }
 
@@ -196,14 +196,14 @@ public class GameHub : Hub<IGameClient>
         var roomName = _roomManager.GetRoomNameByConnection(connectionId); // TODO Упростить
         if (roomName == null)
         {
-            await Clients.Caller.Error("Имя комнаты не найдено.");
+            await Clients.Caller.Error("Room name not found.");
             return;
         }
 
         var room = _roomManager.GetRoom(roomName); // TODO Вместо 2 методов 2 перегрузка
         if (room == null)
         {
-            await Clients.Caller.Error("Комната не найдена.");
+            await Clients.Caller.Error("Room not found.");
             return;
         }
 
@@ -267,7 +267,7 @@ public class GameHub : Hub<IGameClient>
             };
 
             await _gameResultRepository.SaveResultAsync(result);
-            Console.WriteLine($"Сохранён результат: {playerName} — {state.Score}");
+            Console.WriteLine($"The result was saved: {playerName} — {state.Score}");
         }
     }
 
@@ -276,24 +276,24 @@ public class GameHub : Hub<IGameClient>
         var room = _roomManager.GetRoom(roomName);
         if (room == null)
         {
-            await Clients.Caller.Error("Комната не найдена.");
+            await Clients.Caller.Error("Room not found.");
             return;
         }
 
         if (room.LeaderConnectionId != Context.ConnectionId)
         {
-            await Clients.Caller.Error("Только текущий лидер может передавать лидерство.");
+            await Clients.Caller.Error("Only the current leader can transfer leadership.");
             return;
         }
 
         if (!_roomManager.GetPlayersInRoom(roomName).Any(p => p.ConnectionId == newLeaderConnectionId))
         {
-            await Clients.Caller.Error("Игрок не найден в комнате.");
+            await Clients.Caller.Error("Player not found in room.");
             return;
         }
 
         room.LeaderConnectionId = newLeaderConnectionId;
-        Console.WriteLine($"Лидер комнаты {roomName} сменён на {newLeaderConnectionId}");
+        Console.WriteLine($"Room leader {roomName} changed to {newLeaderConnectionId}");
 
         await UpdatePlayerList(roomName);
     }
