@@ -173,7 +173,7 @@ public class GameHub : Hub<IGameClient>
         var players = _roomManager.GetPlayersInRoom(roomName);
         foreach (var player in players)
         {
-            var pos = new Vector2(0, 0);
+            var pos = GameConfig.PlayerInitPosition;
             _frameStreamer.RegisterPlayer(player.ConnectionId, pos);
             playerPositions[player.ConnectionId] = new PlayerStateDto { X = pos.X, Y = pos.Y };
         }
@@ -223,8 +223,8 @@ public class GameHub : Hub<IGameClient>
                 OwnerId = connectionId,
                 X = position.X,
                 Y = position.Y,
-                VelocityX = BulletDto.PlayerVelocityX,
-                VelocityY = BulletDto.PlayerVelocityY
+                VelocityX = GameConfig.PlayerBulletVelocityX,
+                VelocityY = GameConfig.PlayerBulletVelocityY
             };
 
             room.State.PlayerBullets[bullet.Id] = bullet;

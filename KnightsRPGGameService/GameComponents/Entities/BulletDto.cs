@@ -8,8 +8,5 @@
         public float Y { get; set; }
         public float VelocityX { get; set; }
         public float VelocityY { get; set; }
-
-        public static float PlayerVelocityX { get; } = 0; // TODO Перенести в правила игры
-        public static float PlayerVelocityY { get; } = -300; // TODO Перенести в правила игры
     }
 }

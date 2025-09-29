@@ -8,8 +8,8 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents;
 
 public class FrameStreamer
 {
-    private const float BotSpeed = 15f;
-    private const float BulletHitRadius = 20f;
+    private const float BotSpeed = GameConfig.BotSpeed;
+    private const float BulletHitRadius = GameConfig.BulletHitRadius;
 
     private readonly IHubContext<GameHub, IGameClient> _hubContext;
     private readonly RoomManager _roomManager;
@@ -126,7 +126,7 @@ public class FrameStreamer
         room.State.FrameTimer = new Timer(async _ =>
         {
             await UpdateFrameForRoom(room);
-        }, null, 0, 25); // ~40 FPS
+        }, null, 0, GameConfig.FrameIntervalMs);
     }
 
     public void StopStreamingForRoom(string roomName)
@@ -188,7 +188,7 @@ public class FrameStreamer
             if (now - state.LastBotSpawnTime >= spawnInterval && state.Bots.Count < 8)
             {
                 var botId = Guid.NewGuid().ToString();
-                var botPos = new Vector2(_rand.Next(50, 640 - 50), 0);
+                var botPos = new Vector2(_rand.Next(50, (int)GameConfig.MapWidth - 50), 0);
                 Console.WriteLine($"SPAWN BOT {now}||{state.LastBotSpawnTime}||{spawnInterval} {botId} {room.RoomName}");
                 state.LastBotSpawnTime = now;
                 AddEnemyBot(botId, botPos, room.RoomName);
@@ -248,16 +248,15 @@ public class FrameStreamer
 
         moveVector = Vector2.Normalize(moveVector);
         var deltaTime = (float)(DateTime.UtcNow - state.LastUpdateTime).TotalSeconds;
-        var speed = 200f;
+        var speed = GameConfig.PlayerSpeed;
 
         var player = state.Players[connectionId];
         var newPosition = player.Position + moveVector * speed * deltaTime;
 
-        // TODO Ограничение по размерам карты
         const float minX = 0f;
-        const float maxX = 640f;
+        const float maxX = GameConfig.MapWidth;
         const float minY = 0f;
-        const float maxY = 960f;
+        const float maxY = GameConfig.MapHeight;
 
         newPosition.X = Math.Clamp(newPosition.X, minX, maxX);
         newPosition.Y = Math.Clamp(newPosition.Y, minY, maxY);
@@ -276,7 +275,7 @@ public class FrameStreamer
             {
                 if (!IsHit(bot.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
 
-                bot.Health -= 20;
+                bot.Health -= GameConfig.PlayerHitDamage;
                 await _hubContext.Clients.Group(roomName).ReceiveBotHit(botId, bot.Health);
 
                 if (bot.Health <= 0)
@@ -326,7 +325,7 @@ public class FrameStreamer
             {
                 if (!IsHit(player.Position, bullet.X, bullet.Y, BulletHitRadius)) continue;
 
-                player.Health -= PlayerState.PlayerHitDamage; //TODO Player Hit Damage
+                player.Health -= PlayerState.PlayerHitDamage;
                 await _hubContext.Clients.Group(roomName).PlayerHit(playerId, player.Health);
                 if (player.Health <= 0)
                     await _hubContext.Clients.Group(roomName).PlayerDied(playerId);
@@ -350,7 +349,7 @@ public class FrameStreamer
     private async Task BotsShootAtPlayers(GameRoom.RoomState state, string roomName)
     {
         var now = DateTime.UtcNow;
-        var fireInterval = TimeSpan.FromSeconds(2); // Интервал между выстрелами
+        var fireInterval = GameConfig.BotFireInterval; // Интервал между выстрелами
 
         foreach (var bot in state.Bots.Values)
         {
@@ -427,8 +426,8 @@ public class FrameStreamer
     {
         var delta = (float)(DateTime.UtcNow - state.LastUpdateTime).TotalSeconds;
 
-        const float screenWidth = 640; //TODO размеры игры
-        const float screenHeight = 960;
+        const float screenWidth = GameConfig.MapWidth;
+        const float screenHeight = GameConfig.MapHeight;
 
         var toRemove = new List<string>();
 
@@ -500,5 +499,5 @@ public class FrameStreamer
     }
 
     /*TODO Размер Карты*/
-    private static bool IsOutOfBounds(float x, float y) => x < 0 || x > 640 || y < 0 || y > 960;
+    private static bool IsOutOfBounds(float x, float y) => x < 0 || x > GameConfig.MapWidth || y < 0 || y > GameConfig.MapHeight;
 }
