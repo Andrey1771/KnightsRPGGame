@@ -9,8 +9,8 @@ namespace KnightsRPGGame.Service.GameAPI.GameComponents
         public static int FrameIntervalMs => 1000 / TargetFps;
 
         // Размеры карты
-        public const float MapWidth = 640f;
-        public const float MapHeight = 960f;
+        public const float MapWidth = 1280f;
+        public const float MapHeight = 720f;
 
         // Игроки
         public const float PlayerSpeed = 200f;
